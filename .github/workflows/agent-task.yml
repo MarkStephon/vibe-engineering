@@ -14,17 +14,17 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          
+
       - name: Install Codex CLI
         run: |
           python -m pip install --upgrade pip
-          pip install codex-cli
-  
+          python -m pip install codex-cli
+
       - name: Read Issue
         run: |
           echo "${{ github.event.issue.body }}" > ISSUE.md
@@ -33,13 +33,33 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          codex run <<'EOF'
-          Read ISSUE.md as a contract.
-          Follow AGENT_PROTOCOL.md.
-          Generate execution plan.
-          Execute task.
-          Run tests.
-          EOF
+          set -e
+          # Try available CLI entrypoints in order to avoid "command not found"
+          if command -v codex >/dev/null 2>&1; then
+            codex run <<'EOF'
+            Read ISSUE.md as a contract.
+            Follow AGENT_PROTOCOL.md.
+            Generate execution plan.
+            Execute task.
+            Run tests.
+            EOF
+          elif command -v codex-cli >/dev/null 2>&1; then
+            codex-cli run <<'EOF'
+            Read ISSUE.md as a contract.
+            Follow AGENT_PROTOCOL.md.
+            Generate execution plan.
+            Execute task.
+            Run tests.
+            EOF
+          else
+            python -m codex run <<'EOF'
+            Read ISSUE.md as a contract.
+            Follow AGENT_PROTOCOL.md.
+            Generate execution plan.
+            Execute task.
+            Run tests.
+            EOF
+          fi
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
