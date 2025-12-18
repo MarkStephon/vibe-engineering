@@ -52,6 +52,7 @@ jobs:
           fi
 
       - name: Create Pull Request
+        id: create_pr
         uses: peter-evans/create-pull-request@v6
         with:
           title: "[Agent PR] ${{ github.event.issue.title }}"
