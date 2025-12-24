@@ -23,10 +23,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Aider
+      - name: Install Codex CLI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install aider-chat
+          python -m pip install codex-cli
 
       - name: Read Issue
         id: read_issue
@@ -38,25 +38,27 @@ jobs:
           # 默认让 aider 自动检测
           echo "Issue content saved to ISSUE.md"
 
-      - name: Run Aider
+      - name: Run Codex
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
           
-          # 创建任务提示
-          cat > task.md <<'EOF'
-          $(cat ISSUE.md)
+          cat > CODEX_PROMPT.txt <<'PROMPT'
+          Read ISSUE.md as a contract.
+          Follow AGENT_PROTOCOL.md.
+          Generate execution plan.
+          Execute task.
+          Run tests.
+          PROMPT
           
-          Please:
-          1. Read and understand the requirements above
-          2. Make the necessary code changes
-          3. Ensure the changes are complete and functional
-          4. Add or update tests if needed
-          EOF
-          
-          # 运行 aider（自动模式）
-          aider --yes --message "$(cat task.md)" --no-git
+          if command -v codex >/dev/null 2>&1; then
+            codex run CODEX_PROMPT.txt
+          elif command -v codex-cli >/dev/null 2>&1; then
+            codex-cli run CODEX_PROMPT.txt
+          else
+            python -m codex run CODEX_PROMPT.txt
+          fi
 
       - name: Debug git status
         run: |
