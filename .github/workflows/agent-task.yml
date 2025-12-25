@@ -232,35 +232,52 @@ jobs:
           PLAN
 
           cat > CODEX_PROMPT.txt <<'PROMPT'
-          Read ISSUE.md (contract) and AGENT_PROTOCOL.md (rules). Then implement ISSUE.md.
+          You are an AI coding agent. Your task is to read ISSUE.md (the contract) and AGENT_PROTOCOL.md (the rules), then implement the requirements.
 
-          IMPORTANT:
-          - Do NOT output or discuss "JSON tool calls" or "functions.shell" formatting.
-          - Just execute: read/write files in the repo and run commands as needed.
-          - Update EXEC_PLAN.md with: plan (exact files), progress checkboxes, and decisions.
-          - Produce real code changes (at least one file changed), then run tests if available.
+          Steps:
+          1. Read ISSUE.md to understand what needs to be built
+          2. Read AGENT_PROTOCOL.md to understand the rules and constraints
+          3. Create or update EXEC_PLAN.md with:
+             - A concrete plan listing exact files to create/modify
+             - Progress checkboxes
+             - Key decisions
+          4. Implement the code changes (create/modify at least one source file)
+          5. If tests exist, run them; if not, note this in EXEC_PLAN.md
 
-          Focus on minimal, reviewable changes. No unrelated refactors.
+          Rules:
+          - Make minimal, focused changes that directly address ISSUE.md
+          - Do not refactor unrelated code
+          - Ensure all changes produce a non-empty git diff
+          - Write code that is readable and maintainable
+
+          Start by reading ISSUE.md and AGENT_PROTOCOL.md, then proceed with implementation.
           PROMPT
 
           # `-` 表示从 stdin 读取 prompt
           # Codex 工具会从 ~/.codex/config.toml 读取配置
           # 禁用 MCP 以避免连接等待（mcp startup: no servers）
+          # 设置超时：Codex 执行最多 60 分钟，避免无限循环
           # 设置必要的环境变量
           if [ -n "$OPENROUTER_API_KEY" ]; then
             # 使用 OpenRouter，设置必要的环境变量
-            env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            timeout 3600 env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
                 HTTP_REFERER="https://github.com/${{ github.repository }}" \
                 X_TITLE="GitHub Actions Agent" \
                 CODEX_DISABLE_MCP="true" \
                 MCP_DISABLED="true" \
-                npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
+                npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt || {
+              echo "⚠️ Codex execution timed out or failed after 60 minutes"
+              exit 1
+            }
           else
             # 使用 OpenAI
-            env OPENAI_API_KEY="$API_KEY" \
+            timeout 3600 env OPENAI_API_KEY="$API_KEY" \
                 CODEX_DISABLE_MCP="true" \
                 MCP_DISABLED="true" \
-                npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
+                npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt || {
+              echo "⚠️ Codex execution timed out or failed after 60 minutes"
+              exit 1
+            }
           fi
 
       - name: Run tests (if available)
