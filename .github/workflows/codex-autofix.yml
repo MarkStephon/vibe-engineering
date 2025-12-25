@@ -47,10 +47,47 @@ jobs:
         run: |
           set -e
 
+          # 创建 exec plan 文件
+          cat > EXEC_PLAN.md <<'PLAN'
+          # Auto-Fix Execution Plan
+          
+          ## Goal
+          Fix failing CI tests with minimal surgical changes
+          
+          ## Status
+          - [ ] Identify failing tests
+          - [ ] Understand root cause
+          - [ ] Implement minimal fix
+          - [ ] Run tests → Fix → Run again (iterate)
+          - [ ] Verify all tests pass
+          
+          ## Changes Made
+          (Will be updated during execution)
+          PLAN
+
           cat > CODEX_PROMPT.txt <<'PROMPT'
-          You are working in a Node.js monorepo with Jest tests and GitHub Actions. Read the repository,
-          run the test suite, identify the minimal change needed to make all tests pass, implement only that change,
-          and stop. Do not refactor unrelated code or files. Keep changes small and surgical.
+          You are fixing failing CI tests following Vibe Engineering principles.
+
+          ## Your Task
+          1. Run the test suite to identify failures
+          2. Understand the root cause of each failure
+          3. Implement the MINIMAL change needed to fix the tests
+          4. Run tests → Fix failures → Run tests again (iterate until all pass)
+          5. Update EXEC_PLAN.md with what you changed
+
+          ## Watchdog Reminders
+          - Goal: Make all tests pass with minimal changes
+          - Do NOT refactor unrelated code
+          - Do NOT change working code
+          - Focus on: fixing the specific test failures only
+
+          ## Vibe Engineering Principles
+          - Code is cheap, trust is expensive
+          - Spend time on tests: run → fix → run → fix (iterate)
+          - Make minimal, surgical changes
+          - Document what you changed and why
+
+          Start by running tests, then fix failures iteratively.
           PROMPT
 
           # `-` 表示从 stdin 读取 prompt
@@ -66,7 +103,16 @@ jobs:
           base: ${{ env.FAILED_HEAD_BRANCH }}
           title: "Auto-fix failing CI via Codex"
           body: |
-            Codex automatically generated this PR in response to a CI failure on workflow `${{ env.FAILED_WORKFLOW_NAME }}`.
-            Failed run: ${{ env.FAILED_RUN_URL }}
-            Head branch: `${{ env.FAILED_HEAD_BRANCH }}`
-            This PR contains minimal changes intended solely to make the CI pass.
+            Codex automatically generated this PR in response to a CI failure following Vibe Engineering principles.
+            
+            ## Execution Plan
+            $(if [ -f EXEC_PLAN.md ]; then cat EXEC_PLAN.md; else echo "Execution plan not available"; fi)
+            
+            ## Context
+            - Failed workflow: `${{ env.FAILED_WORKFLOW_NAME }}`
+            - Failed run: ${{ env.FAILED_RUN_URL }}
+            - Head branch: `${{ env.FAILED_HEAD_BRANCH }}`
+            
+            ## Changes
+            This PR contains minimal, surgical changes intended solely to make the CI pass.
+            Following Vibe Engineering: code is cheap, trust is expensive - changes are focused on fixing test failures only.
