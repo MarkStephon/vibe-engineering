@@ -201,21 +201,11 @@ jobs:
           cat ~/.codex/config.toml
 
           cat > CODEX_PROMPT.txt <<'PROMPT'
-          You are an automated coding agent. Your task is to:
+          Read ISSUE.md and AGENT_PROTOCOL.md. Then implement the requirements in ISSUE.md.
 
-          1. Read ISSUE.md to understand the requirements
-          2. Read AGENT_PROTOCOL.md to understand the rules
-          3. Create a concrete execution plan listing files to modify/create
-          4. Execute the plan: make the actual code changes
-          5. Verify changes work (run tests if available)
+          You must create or modify code files. Do not spend time planning - start coding immediately.
 
-          IMPORTANT: 
-          - You MUST produce actual code changes (modify or create at least one file)
-          - Do NOT just plan or think - you MUST execute and make changes
-          - Stop planning and start coding immediately after reading the files
-          - The task is FAILED if no code changes are produced
-
-          Start by reading ISSUE.md and AGENT_PROTOCOL.md, then immediately proceed to implement the changes.
+          Use your file editing capabilities to create/modify the required files. The task fails if no files are changed.
           PROMPT
 
           # `-` 表示从 stdin 读取 prompt
