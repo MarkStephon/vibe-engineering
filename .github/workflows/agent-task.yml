@@ -289,8 +289,6 @@ jobs:
           labels: |
             ai-generated
             automated-pr
-          # 如果 PR 已存在，则更新它
-          update-branch: true
 
       - name: Comment on issue
         if: github.event_name != 'workflow_dispatch' && steps.create_pr.outputs.pull-request-number
