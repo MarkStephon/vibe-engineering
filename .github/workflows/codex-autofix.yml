@@ -91,7 +91,10 @@ jobs:
           PROMPT
 
           # `-` 表示从 stdin 读取 prompt
-          npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
+          # 禁用 MCP 以避免连接等待（mcp startup: no servers）
+          env CODEX_DISABLE_MCP="true" \
+              MCP_DISABLED="true" \
+              npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
       - name: Verify tests
         run: npm test --silent
       - name: Create pull request with fixes

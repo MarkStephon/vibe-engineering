@@ -146,6 +146,8 @@ jobs:
           model_reasoning_effort = "none"
           disable_response_storage = true
           preferred_auth_method = "apikey"
+          # 禁用 MCP 服务器以避免连接等待
+          disable_mcp = true
 
           [model_providers.openrouter]
           name = "OpenRouter"
@@ -178,6 +180,8 @@ jobs:
           model_reasoning_effort = "none"
           disable_response_storage = true
           preferred_auth_method = "apikey"
+          # 禁用 MCP 服务器以避免连接等待
+          disable_mcp = true
 
           [model_providers.openai]
           name = "OpenAI"
@@ -204,10 +208,10 @@ jobs:
           # 这个文件记录进度，不只是给模型看的，也是给人看的
           cat > EXEC_PLAN.md <<'PLAN'
           # Execution Plan
-          
+
           ## Goal
           Implement requirements from ISSUE.md following AGENT_PROTOCOL.md
-          
+
           ## Status
           - [ ] Read and understand ISSUE.md
           - [ ] Read and understand AGENT_PROTOCOL.md
@@ -217,10 +221,10 @@ jobs:
           - [ ] Run tests and fix failures
           - [ ] Update documentation
           - [ ] Verify all requirements met
-          
+
           ## Files to Create/Modify
           (Will be updated during execution)
-          
+
           ## Notes
           (Will be updated during execution)
           PLAN
@@ -263,16 +267,21 @@ jobs:
 
           # `-` 表示从 stdin 读取 prompt
           # Codex 工具会从 ~/.codex/config.toml 读取配置
-          # 只需要确保相应的 API key 环境变量被设置
+          # 禁用 MCP 以避免连接等待（mcp startup: no servers）
+          # 设置必要的环境变量
           if [ -n "$OPENROUTER_API_KEY" ]; then
             # 使用 OpenRouter，设置必要的环境变量
             env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
                 HTTP_REFERER="https://github.com/${{ github.repository }}" \
                 X_TITLE="GitHub Actions Agent" \
+                CODEX_DISABLE_MCP="true" \
+                MCP_DISABLED="true" \
                 npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
           else
             # 使用 OpenAI
             env OPENAI_API_KEY="$API_KEY" \
+                CODEX_DISABLE_MCP="true" \
+                MCP_DISABLED="true" \
                 npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt
           fi
 
