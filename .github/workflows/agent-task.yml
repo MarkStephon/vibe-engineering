@@ -257,26 +257,26 @@ jobs:
           # `-` 表示从 stdin 读取 prompt
           # Codex 工具会从 ~/.codex/config.toml 读取配置
           # 禁用 MCP 以避免连接等待（mcp startup: no servers）
-          # 设置超时：Codex 专用模型通常更快，设置 30 分钟超时避免无限循环
+          # 设置超时：5 分钟超时，快速失败避免无限循环
           # 设置必要的环境变量
           if [ -n "$OPENROUTER_API_KEY" ]; then
             # 使用 OpenRouter，设置必要的环境变量
-            timeout 1800 env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+            timeout 300 env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
                 HTTP_REFERER="https://github.com/${{ github.repository }}" \
                 X_TITLE="GitHub Actions Agent" \
                 CODEX_DISABLE_MCP="true" \
                 MCP_DISABLED="true" \
                 npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt || {
-              echo "⚠️ Codex execution timed out or failed after 30 minutes"
+              echo "⚠️ Codex execution timed out or failed after 5 minutes"
               exit 1
             }
           else
             # 使用 OpenAI
-            timeout 1800 env OPENAI_API_KEY="$API_KEY" \
+            timeout 300 env OPENAI_API_KEY="$API_KEY" \
                 CODEX_DISABLE_MCP="true" \
                 MCP_DISABLED="true" \
                 npx -y @openai/codex exec --full-auto -C . - < CODEX_PROMPT.txt || {
-              echo "⚠️ Codex execution timed out or failed after 30 minutes"
+              echo "⚠️ Codex execution timed out or failed after 5 minutes"
               exit 1
             }
           fi
