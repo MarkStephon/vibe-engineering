@@ -50,9 +50,11 @@ def main():
         return 1
     
     # 配置客户端
+    # 优先使用 OpenRouter 的 chatgpt-codex（专为代码生成优化）
     if os.getenv("OPENROUTER_API_KEY"):
         base_url = "https://openrouter.ai/api/v1"
-        model = os.getenv("CODEX_MODEL", "openai/gpt-4o")
+        # 默认使用 chatgpt-codex，专为代码生成优化
+        model = os.getenv("CODEX_MODEL", "chatgpt-codex")
         headers = {
             "HTTP-Referer": os.getenv("HTTP_REFERER", "https://github.com"),
             "X-Title": os.getenv("X_TITLE", "GitHub Actions")

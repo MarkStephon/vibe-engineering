@@ -3,6 +3,7 @@
 This repository documents the minimal automation needed to run an issue-driven agent that ships code through GitHub Actions and a PR review bot.
 
 ## Automation Flow
+
 1. Create or label an issue to start the automation:
    - Add the `agent-task` label, **or**
    - Open an issue with a title starting with `[Agent]`.
@@ -10,6 +11,7 @@ This repository documents the minimal automation needed to run an issue-driven a
 3. The pull request clearly references the originating issue and can be auto-reviewed using `REVIEW_CHECKLIST.md`.
 
 ## Key Files
+
 - `.github/workflows/agent-task.yml`: Workflow that triggers on qualifying issues and runs the implementation script.
 - `scripts/implement_issue.py`: Python script that reads ISSUE.md, calls AI API, and generates code files.
 - `AGENT_PROTOCOL.md`: Guidance for implementation planning, execution, verification, and escalation.
@@ -29,9 +31,13 @@ This repository documents the minimal automation needed to run an issue-driven a
 4. GitHub Actions 会自动运行 Python 脚本，调用 AI API 生成代码并创建 PR
 5. 检查 PR 中的代码改动，确认可以运行
 
-**配置要求**：需要在 GitHub Secrets 中配置 `OPENAI_API_KEY` 或 `OPENROUTER_API_KEY`（可选：`MODEL` 指定模型）
+**配置要求**：
+- 推荐：配置 `OPENROUTER_API_KEY`，默认使用 `chatgpt-codex`（专为代码生成优化）
+- 备选：配置 `OPENAI_API_KEY`，使用 `gpt-4o`
+- 可选：配置 `MODEL` secret 指定其他模型（如 `openai/gpt-5.2`）
 
 ## Operating Guidelines
+
 - Treat each issue as the contract for the agent's work; keep requirements and acceptance criteria there.
 - Prefer small, reviewable changes with clear assumptions documented in commits or the PR body.
 - Use the review checklist to catch clarity, scope, and testing risks early.
