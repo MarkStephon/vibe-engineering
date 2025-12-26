@@ -269,7 +269,7 @@ jobs:
           cat CODEX_PROMPT.txt
           echo ""
           echo "=== Running Codex ==="
-          
+
           if [ -n "$OPENAI_API_KEY" ]; then
             # 使用 OpenAI 直接 API（更兼容 Codex）
             timeout 300 env OPENAI_API_KEY="$API_KEY" \
@@ -301,6 +301,30 @@ jobs:
               echo "Continuing workflow despite Codex failure..."
             }
           fi
+
+      - name: Check if fallback needed
+        id: check_fallback
+        run: |
+          if git diff --quiet && [ ! -f EXEC_PLAN.md ]; then
+            echo "needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "needed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fallback Implementation (if Codex failed)
+        if: steps.check_fallback.outputs.needed == 'true'
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CODEX_MODEL: ${{ secrets.CODEX_MODEL }}
+          HTTP_REFERER: https://github.com/${{ github.repository }}
+          X_TITLE: GitHub Actions Agent
+        run: |
+          echo "=== Using Fallback Implementation Script ==="
+          python3 scripts/implement_issue.py || {
+            echo "⚠️ Fallback script also failed, but continuing..."
+          }
 
       - name: Run tests (if available)
         continue-on-error: true
