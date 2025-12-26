@@ -32,7 +32,8 @@ This repository documents the minimal automation needed to run an issue-driven a
 5. 检查 PR 中的代码改动，确认可以运行
 
 **配置要求**：
-- 推荐：配置 `OPENROUTER_API_KEY`，默认使用 `chatgpt-codex`（专为代码生成优化）
+
+- 推荐：配置 `OPENROUTER_API_KEY`，默认使用 `openai/gpt-5.1-codex`（专为代码生成优化）
 - 备选：配置 `OPENAI_API_KEY`，使用 `gpt-4o`
 - 可选：配置 `MODEL` secret 指定其他模型（如 `openai/gpt-5.2`）
 
