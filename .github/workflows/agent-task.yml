@@ -234,15 +234,25 @@ jobs:
           PLAN
 
           cat > CODEX_PROMPT.txt <<'PROMPT'
-          Read ISSUE.md and AGENT_PROTOCOL.md, then implement the requirements.
+          You are a coding assistant. Your task is to implement the requirements described in ISSUE.md.
 
-          Execute immediately:
-          - Read ISSUE.md (contract) and AGENT_PROTOCOL.md (rules)
-          - Create/update EXEC_PLAN.md with plan and files to modify
-          - Write code changes (at least one file)
-          - Run tests if available
+          Steps to follow:
+          1. Read ISSUE.md to understand what needs to be built
+          2. Read AGENT_PROTOCOL.md to understand the rules and constraints
+          3. Create or update EXEC_PLAN.md with:
+             - A concrete plan listing exact files to create/modify
+             - Progress checkboxes
+             - Key decisions
+          4. Implement the code changes (create/modify at least one source file)
+          5. If tests exist, run them; if not, note this in EXEC_PLAN.md
 
-          Do not think or discuss. Just execute commands and write files.
+          Important rules from AGENT_PROTOCOL.md:
+          - Make minimal, focused changes that directly address ISSUE.md
+          - Do not refactor unrelated code
+          - Ensure all changes produce a non-empty git diff
+          - Write code that is readable and maintainable
+
+          Begin by reading ISSUE.md and AGENT_PROTOCOL.md.
           PROMPT
 
       - name: Run Codex
