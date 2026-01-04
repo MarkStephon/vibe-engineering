@@ -6,6 +6,7 @@ on:
 
 jobs:
   codegen:
+    # 只有当评论包含 /codegen 指令时才触发
     if: contains(github.event.comment.body, '/codegen')
     runs-on: ubuntu-latest
     permissions:
@@ -14,61 +15,86 @@ jobs:
       issues: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Run Codegen Script
+      - name: "Vibe Agent: Execute Codegen"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_CONTEXT: ${{ github.event.issue.body }}
-          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         uses: actions/github-script@v7
         with:
           script: |
-            const axios = (await import('axios')).default;
-            
-            // 1. 调用 AI 获取具体文件代码
-            const prompt = `你是一个全栈工程师。基于以下需求，请直接输出需要创建的文件路径和完整代码。
-            需求：${process.env.ISSUE_CONTEXT}
-            格式要求：必须使用 JSON 数组格式，例如：[{"path": "backend/models/pomo.go", "content": "..."}]
-            技术栈：Go (GORM), Next.js (TS)`;
+            async function runCodegen() {
+              const branchName = `ai-codegen-${context.issue.number}-${Date.now()}`;
+              
+              // 1. 调用 OpenRouter 获取文件指令 (使用原生 fetch 避免依赖报错)
+              const prompt = `你是一个资深全栈工程师。基于以下需求，请直接输出需要创建的文件路径和完整代码。
+              需求标题：${process.env.ISSUE_TITLE}
+              需求描述：${process.env.ISSUE_CONTEXT}
+              要求：
+              1. 返回格式必须是 JSON 对象，结构为 {"files": [{"path": "路径", "content": "代码内容"}]}。
+              2. 路径必须包含 backend/ 或 frontend/ 目录。
+              3. 使用 Go (GORM) 和 Next.js (TS) 实现。`;
 
-            const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-              model: "anthropic/claude-3.5-sonnet",
-              messages: [{ role: "user", content: prompt }],
-              response_format: { type: "json_object" } // 强制 JSON 输出
-            }, {
-              headers: { 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}` }
-            });
+              console.log("Calling OpenRouter...");
+              const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  model: "anthropic/claude-3.5-sonnet",
+                  messages: [{ role: "user", content: prompt }],
+                  response_format: { type: "json_object" }
+                })
+              });
 
-            const files = JSON.parse(res.data.choices[0].message.content).files;
+              const aiData = await aiRes.json();
+              if (!aiData.choices) throw new Error("AI 返回数据异常");
+              
+              const { files } = JSON.parse(aiData.choices[0].message.content);
+              console.log(`AI generated ${files.length} files.`);
 
-            // 2. 创建新分支
-            const branchName = `ai-codegen-${context.issue.number}-${Date.now()}`;
-            const baseRef = await github.rest.git.getRef({...context.repo, ref: 'heads/main'});
-            await github.rest.git.createRef({
-              ...context.repo,
-              ref: `refs/heads/${branchName}`,
-              sha: baseRef.data.object.sha
-            });
-
-            // 3. 写入文件并提交 (逐个文件操作)
-            for (const file of files) {
-              await github.rest.repos.createOrUpdateFileContents({
+              // 2. 创建新分支
+              console.log(`Creating branch: ${branchName}`);
+              const baseRef = await github.rest.git.getRef({...context.repo, ref: 'heads/main'});
+              await github.rest.git.createRef({
                 ...context.repo,
-                path: file.path,
-                message: `feat: ai generated ${file.path}`,
-                content: Buffer.from(file.content).toString('base64'),
-                branch: branchName
+                ref: `refs/heads/${branchName}`,
+                sha: baseRef.data.object.sha
+              });
+
+              // 3. 逐个写入文件到分支
+              for (const file of files) {
+                console.log(`Writing: ${file.path}`);
+                await github.rest.repos.createOrUpdateFileContents({
+                  ...context.repo,
+                  path: file.path,
+                  message: `feat: ai-codegen for #${context.issue.number}`,
+                  content: Buffer.from(file.content).toString('base64'),
+                  branch: branchName
+                });
+              }
+
+              // 4. 自动创建 Pull Request
+              console.log("Creating PR...");
+              const pr = await github.rest.pulls.create({
+                ...context.repo,
+                title: `[AI Codegen] ${process.env.ISSUE_TITLE}`,
+                head: branchName,
+                base: 'main',
+                body: `🤖 **Vibe AI Codegen 交付报告**\n\n已根据 Issue #${context.issue.number} 自动生成代码：\n${files.map(f => `- \`${f.path}\``).join('\n')}\n\n请检查并进行后续逻辑补全。`
+              });
+
+              // 5. 在原 Issue 下回复确认
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body: `✅ **代码生成成功！**\n代码已推送到新分支并创建了 PR：${pr.data.html_url}\n工程师们可以开始接力了！`
               });
             }
 
-            // 4. 创建 PR
-            await github.rest.pulls.create({
-              ...context.repo,
-              title: `[AI Codegen] 为 Issue #${context.issue.number} 生成代码`,
-              head: branchName,
-              base: 'main',
-              body: `🤖 AI 已根据您的指令自动生成代码。请检查并 Merge。`
-            });
+            await runCodegen();
