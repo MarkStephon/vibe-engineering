@@ -13,11 +13,8 @@ jobs:
       issues: write
       contents: read
     steps:
-      - name: Checkout Testing Branch
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          # 【关键】强制检出你的测试分支，而不是默认的 main
-          ref: 'claude-code/auto-coding'
           fetch-depth: 0
 
       - name: Run Claude Code Action
