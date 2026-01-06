@@ -1,32 +1,22 @@
-# --- 第一阶段：编译 (Builder) ---
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24 AS build
 
-# 安装 git 以便下载依赖
-RUN apk add --no-cache git
+WORKDIR /go/src/vibe-backend
 
-WORKDIR /app
+COPY backend/ .
 
-# 先拷贝依赖文件，利用 Docker 缓存层
-COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/go/pkg/mod,target=/go/pkg/mod \
+    go mod download
 
-# 拷贝源代码并编译
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# https://docs.railway.com/guides/dockerfiles#cache-mounts
+RUN --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/go/pkg/mod,target=/go/pkg/mod \
+    --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/root/.cache/go-build,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GO111MODULE=on go build -o /go/bin/server ./cmd/server/main.go
 
-# --- 第二阶段：运行 (Runner) ---
-FROM alpine:latest
+FROM gcr.io/distroless/static-debian13
 
-# 安装 ca-certificates 确保能进行 HTTPS 请求（调用 OpenRouter 等 API 必需）
-RUN apk --no-cache add ca-certificates
+COPY --from=build /go/bin/server /
+COPY --from=build /go/src/vibe-backend/migrations /migrations
 
-WORKDIR /root/
-
-# 从编译阶段拷贝二进制文件
-COPY --from=builder /app/main .
-
-# 暴露端口（Railway 会自动检测）
 EXPOSE 8080
 
-# 启动程序
-CMD ["./main"]
+CMD ["/server"]

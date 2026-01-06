@@ -2,17 +2,34 @@ version: '3.8'
 
 services:
   db:
-    image: mysql:8.0
+    image: postgres:16-alpine
     restart: always
     environment:
-      MYSQL_DATABASE: vibe_db
-      MYSQL_ROOT_PASSWORD: root
+      POSTGRES_DB: vibe_db
+      POSTGRES_USER: vibe
+      POSTGRES_PASSWORD: vibe_secret
     ports:
-      - "3306:3306"
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U vibe -d vibe_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
@@ -20,9 +37,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DB_DSN=root:root@tcp(db:3306)/vibe_db?charset=utf8mb4&parseTime=True&loc=Local
+      - PORT=8080
+      - ENV=development
+      - DATABASE_URL=postgres://vibe:vibe_secret@db:5432/vibe_db?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=debug
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:
@@ -33,3 +57,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
     depends_on:
       - backend
+
+volumes:
+  postgres_data:
+  redis_data:
