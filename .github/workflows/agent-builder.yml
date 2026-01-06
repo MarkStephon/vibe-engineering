@@ -125,7 +125,6 @@ jobs:
             let contextBody = process.env.ISSUE_BODY;
             let parentSpec = '';
             let parentIssueNumber = null;
-            let parentImplementationPlan = null; // 父级前端实施方案
             const parentRegex = /(?:Parent|Ref|父任务|父级|父需求|关联父需求)[\s:：]+#(\d+)/i;
             const parentMatch = contextBody.match(parentRegex);
             if (parentMatch) {
@@ -151,15 +150,6 @@ jobs:
                     new Date(a.created_at) - new Date(b.created_at)
                   );
                   
-                  // 识别前端实施方案的标记（🏗️ 前端实施方案）
-                  const implementationPlanMarkers = [
-                    /🏗️\s*前端实施方案/i,
-                    /🏗️\s*前端实施计划/i,
-                    /前端实施方案/i,
-                    /frontend implementation plan/i,
-                    /frontend implementation/i
-                  ];
-                  
                   // 识别前端约束的标记模式（支持多种格式）
                   const constraintMarkers = [
                     /前端约束/i,
@@ -171,7 +161,9 @@ jobs:
                     /## 前端约束/i,
                     /## 前端规范/i,
                     /### 前端约束/i,
-                    /### 前端规范/i
+                    /### 前端规范/i,
+                    /前端实施方案/i,
+                    /frontend implementation/i
                   ];
                   
                   // 识别约束更新/撤销标记
@@ -184,16 +176,11 @@ jobs:
                     /revoke constraint/i
                   ];
                   
-                  // 提取前端实施方案和约束的评论
+                  // 提取所有包含约束的评论
                   const constraintComments = [];
                   const generalComments = [];
                   
                   sortedComments.forEach(comment => {
-                    // 优先检查是否是前端实施方案
-                    const hasImplementationPlan = implementationPlanMarkers.some(marker => 
-                      marker.test(comment.body)
-                    );
-                    
                     const hasConstraint = constraintMarkers.some(marker => 
                       marker.test(comment.body)
                     );
@@ -202,16 +189,7 @@ jobs:
                       marker.test(comment.body)
                     );
                     
-                    if (hasImplementationPlan) {
-                      // 提取前端实施方案（取最新的）
-                      parentImplementationPlan = {
-                        body: comment.body,
-                        user: comment.user.login,
-                        createdAt: comment.created_at,
-                        url: comment.html_url
-                      };
-                      console.log(`📋 发现父级前端实施方案: ${comment.html_url}`);
-                    } else if (hasConstraint || isUpdate) {
+                    if (hasConstraint || isUpdate) {
                       constraintComments.push({
                         body: comment.body,
                         user: comment.user.login,
@@ -613,55 +591,7 @@ jobs:
               throw new Error("解析失败：AI 未生成任何有效文件块");
             }
 
-            // 7. 验证和过滤文件
-            const validFiles = [];
-            const warnings = [];
-            
-            for (const file of files) {
-              // 跳过后端文件
-              if (file.path.endsWith('.go') || file.path.includes('backend/')) continue;
-              
-              // 验证路径（传入父级规范，允许父级规范覆盖默认规则）
-              const pathErrors = validatePath(file.path, parentSpec);
-              if (pathErrors.length > 0) {
-                warnings.push(...pathErrors);
-              }
-              
-              // JSON 校验
-              if (file.path.endsWith('.json')) {
-                try { 
-                  JSON.parse(file.content); 
-                } catch (e) { 
-                  warnings.push(`JSON 语法错误: ${file.path}`);
-                  continue; 
-                }
-              }
-              
-              // 检查 CREATE 操作的文件是否已存在
-              if (file.action === 'CREATE') {
-                const exists = await fileExists(file.path);
-                if (exists) {
-                  warnings.push(`文件已存在，CREATE 操作改为 MODIFY: ${file.path}`);
-                  file.action = 'MODIFY';
-                }
-              }
-              
-              // 检查受保护文件
-              if (PROJECT_STRUCTURE.protectedFiles.includes(file.path) && file.action === 'CREATE') {
-                warnings.push(`受保护文件不能被覆盖创建: ${file.path}`);
-                file.action = 'MODIFY';
-              }
-              
-              // 内容不能为空
-              if (!file.content || file.content.trim().length === 0) {
-                warnings.push(`文件内容为空，跳过: ${file.path}`);
-                continue;
-              }
-              
-              validFiles.push(file);
-            }
-
-            // 8. 智能分支策略：子issues使用父issue的分支
+            // 7. 智能分支策略：先确定分支名（需要在验证文件之前确定）
             let branchName;
             let baseRef;
             
@@ -710,194 +640,273 @@ jobs:
                 } catch (e2) {}
               }
             }
+            
+            // 检查文件在当前分支是否存在（而不是 main 分支）
+            const fileExistsInBranch = async (path, branch) => {
+              try {
+                await github.rest.repos.getContent({ 
+                  ...context.repo, 
+                  path,
+                  ref: branch
+                });
+                return true;
+              } catch (e) {
+                return false;
+              }
+            };
+            
+            // 7. 验证和过滤文件（使用当前分支检查文件是否存在）
+            const validFiles = [];
+            const warnings = [];
+            
+            for (const file of files) {
+              // 跳过后端文件
+              if (file.path.endsWith('.go') || file.path.includes('backend/')) continue;
+              
+              // 验证路径（传入父级规范，允许父级规范覆盖默认规则）
+              const pathErrors = validatePath(file.path, parentSpec);
+              if (pathErrors.length > 0) {
+                warnings.push(...pathErrors);
+              }
+              
+              // JSON 校验
+              if (file.path.endsWith('.json')) {
+                try { 
+                  JSON.parse(file.content); 
+                } catch (e) { 
+                  warnings.push(`JSON 语法错误: ${file.path}`);
+                  continue; 
+                }
+              }
+              
+              // 检查 CREATE 操作的文件是否在当前分支已存在（关键修复）
+              if (file.action === 'CREATE') {
+                const exists = await fileExistsInBranch(file.path, branchName);
+                if (exists) {
+                  warnings.push(`文件在当前分支已存在，CREATE 操作改为 MODIFY: ${file.path}`);
+                  file.action = 'MODIFY';
+                }
+              }
+              
+              // 检查受保护文件
+              if (PROJECT_STRUCTURE.protectedFiles.includes(file.path) && file.action === 'CREATE') {
+                warnings.push(`受保护文件不能被覆盖创建: ${file.path}`);
+                file.action = 'MODIFY';
+              }
+              
+              // 内容不能为空
+              if (!file.content || file.content.trim().length === 0) {
+                warnings.push(`文件内容为空，跳过: ${file.path}`);
+                continue;
+              }
+              
+              validFiles.push(file);
+            }
 
             const createdFiles = [];
             const modifiedFiles = [];
             
-            for (const file of validFiles) {
-              console.log(`📝 ${file.action}: ${file.path}`);
-              
-              let sha;
-              try {
-                const { data } = await github.rest.repos.getContent({ 
-                  ...context.repo, 
-                  path: file.path, 
-                  ref: branchName 
-                });
-                sha = data.sha;
-              } catch (e) {} 
-              
-              await github.rest.repos.createOrUpdateFileContents({
-                ...context.repo,
-                path: file.path,
-                message: `${file.action === 'CREATE' ? 'feat' : 'refactor'}(fe): ${file.action.toLowerCase()} ${file.path.split('/').pop()}`,
-                content: Buffer.from(file.content).toString('base64'),
-                branch: branchName,
-                sha: sha
-              });
-              
-              if (file.action === 'CREATE') {
-                createdFiles.push(file.path);
-              } else {
-                modifiedFiles.push(file.path);
+            // 9. 准备实施方案文档（在批量提交之前生成）
+            // 提取约束信息用于文档
+            let constraintsSummary = '';
+            if (parentSpec) {
+              // 检查是否有约束部分
+              const constraintMatch = parentSpec.match(/--- \[父级 Issue 前端约束[^\]]*\] ---([\s\S]*?)(?=\n---|$)/);
+              if (constraintMatch) {
+                constraintsSummary = constraintMatch[1].trim();
+                // 限制长度，避免文档过长
+                if (constraintsSummary.length > 2000) {
+                  constraintsSummary = constraintsSummary.substring(0, 2000) + '\n\n... (内容已截断，完整内容请查看父级 Issue)';
+                }
               }
             }
-
-            // 9. 保存实施方案文档到 frontend/lib/doc
-            // 如果有父 issue 且有前端实施方案，使用父 issue 的方案；否则使用当前 issue 的方案
-            let implementationPlanDoc = null;
-            let docPath = null;
-            let docTitle = null;
             
-            if (parentIssueNumber && parentImplementationPlan) {
-              // 使用父 issue 的前端实施方案
-              console.log(`📋 使用父 Issue #${parentIssueNumber} 的前端实施方案`);
-              
-              // 提取实施方案内容（去除标记）
-              let planContent = parentImplementationPlan.body;
-              const planMatch = planContent.match(/(?:🏗️\s*前端实施方案|🏗️\s*前端实施计划|前端实施方案|frontend implementation plan|frontend implementation)[\s:：]*\n?([\s\S]*)/i);
-              if (planMatch && planMatch[1]) {
-                planContent = planMatch[1].trim();
+            // 构建实施方案文档（避免嵌套反引号导致 YAML 解析错误）
+            const branchInfo = parentIssueNumber 
+              ? '**父Issue**: #' + parentIssueNumber + '\n**分支**: `' + branchName + '`' 
+              : '**分支**: `' + branchName + '`';
+            
+            const createdFilesList = createdFiles.length > 0 
+              ? '**新建文件 (' + createdFiles.length + '):**\n' + createdFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
+              : '';
+            
+            const modifiedFilesList = modifiedFiles.length > 0 
+              ? '**修改文件 (' + modifiedFiles.length + '):**\n' + modifiedFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
+              : '';
+            
+            const constraintsSection = constraintsSummary 
+              ? `**前端约束（来自父级 Issue 评论，按时间顺序，后面的优先级更高）**:\n\n${constraintsSummary}\n\n` 
+              : '';
+            
+            const parentSpecSection = parentSpec && !constraintsSummary 
+              ? `**父级规范（优先级最高）**:\n\n${parentSpec.split('\n').slice(0, 100).join('\n')}${parentSpec.split('\n').length > 100 ? '\n\n...' : ''}\n` 
+              : '';
+            
+            const constraintsNote = constraintsSummary 
+              ? `\n**⚠️ 约束优先级说明**:\n- 前端约束来自父级 Issue 的多个评论\n- 按时间顺序处理，后面的约束会覆盖或补充前面的约束\n- 如果约束之间有冲突，以最新的约束为准\n` 
+              : '';
+            
+            const warningsList = warnings.length > 0 
+              ? warnings.map(w => `- ${w}`).join('\n') 
+              : '无警告';
+            
+            const parentIssueNote = parentIssueNumber 
+              ? `此 Issue 基于父 Issue #${parentIssueNumber}，使用同一分支开发` 
+              : '此 Issue 创建了新分支';
+            
+            const constraintsNote2 = constraintsSummary 
+              ? `前端约束可能来自父级 Issue 的多个评论，请仔细阅读所有约束` 
+              : '';
+            
+            // 使用字符串拼接避免 YAML 解析器将 ** 误认为别名引用
+            const implementationPlanDoc = '# Issue #' + context.issue.number + ' 前端实施方案\n\n' +
+              '## 📋 需求信息\n\n' +
+              '**标题**: ' + process.env.ISSUE_TITLE + '\n\n' +
+              '**Issue**: #' + context.issue.number + '\n\n' +
+              branchInfo + '\n\n' +
+              '**创建时间**: ' + new Date().toISOString() + '\n\n' +
+              '---\n\n' +
+              '## 📝 需求描述\n\n' +
+              contextBody.split('\n').slice(0, 50).join('\n') + (contextBody.split('\n').length > 50 ? '\n\n...' : '') + '\n\n' +
+              '---\n\n' +
+              '## 🎯 实施方案\n\n' +
+              '### 文件变更清单\n\n' +
+              createdFilesList + '\n' +
+              modifiedFilesList + '\n' +
+              '### 项目结构约束\n\n' +
+              constraintsSection +
+              parentSpecSection +
+              '**默认项目结构规范**:\n' +
+              '- 页面文件: `frontend/app/[route]/page.tsx`\n' +
+              '- 布局文件: `frontend/app/[route]/layout.tsx`\n' +
+              '- 通用组件: `frontend/components/ui/`\n' +
+              '- 业务组件: `frontend/components/features/`\n' +
+              '- Hooks: `frontend/hooks/`\n' +
+              '- 工具函数: `frontend/lib/utils/`\n' +
+              '- 类型定义: `frontend/types/`\n\n' +
+              constraintsNote + '\n' +
+              '---\n\n' +
+              '## ⚠️ 警告\n\n' +
+              warningsList + '\n\n' +
+              '---\n\n' +
+              '## 📌 注意事项\n\n' +
+              '1. 此文档由 Agent Builder 自动生成\n' +
+              '2. 请验证代码变更后再合并 PR\n' +
+              '3. ' + parentIssueNote + '\n' +
+              (constraintsNote2 ? '4. ' + constraintsNote2 + '\n' : '');
+
+            // 10. 批量提交：使用 Git Tree API 将所有文件变更（代码文件 + 实施方案文档）合并到一个提交中
+            // 这样可以保留父分支的所有已有文件，只更新/添加新文件
+            const allFilesToCommit = [...validFiles];
+            let docPath = null;
+            
+            // 如果有实施方案文档，也加入到批量提交中
+            if (implementationPlanDoc) {
+              // 确定文档路径（如果有父 issue 且有前端实施方案，使用父 issue 的路径）
+              if (parentIssueNumber && parentImplementationPlan) {
+                docPath = `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`;
+              } else {
+                docPath = `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
               }
               
-              docTitle = 'Issue #' + parentIssueNumber + ' 前端实施方案';
-              docPath = `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`;
+              allFilesToCommit.push({
+                path: docPath,
+                content: implementationPlanDoc,
+                action: 'CREATE' // 文档总是创建或更新
+              });
+            }
+            
+            if (allFilesToCommit.length > 0) {
+              console.log(`📦 准备批量提交 ${allFilesToCommit.length} 个文件（包含实施方案文档）...`);
               
-              implementationPlanDoc = '# ' + docTitle + '\n\n' +
-                '## 📋 方案信息\n\n' +
-                '**父Issue**: #' + parentIssueNumber + '\n' +
-                '**分支**: `' + branchName + '`\n' +
-                '**来源**: ' + parentImplementationPlan.url + '\n' +
-                '**创建者**: ' + parentImplementationPlan.user + '\n' +
-                '**创建时间**: ' + new Date(parentImplementationPlan.createdAt).toISOString() + '\n\n' +
-                '---\n\n' +
-                planContent + '\n\n' +
-                '---\n\n' +
-                '## 📌 注意事项\n\n' +
-                '1. 此文档来自父 Issue #' + parentIssueNumber + ' 的前端实施方案\n' +
-                '2. 同一分支下的所有子 Issues 都基于此方案开发\n' +
-                '3. 此文档由 Agent Builder 自动生成并更新\n';
-            } else {
-              // 没有父 issue 或没有前端实施方案，使用当前 issue 的方案（保留原有逻辑）
-              console.log(`📋 使用当前 Issue #${context.issue.number} 的实施方案`);
+              // 1. 获取当前分支的最新 commit SHA
+              const currentRef = await github.rest.git.getRef({
+                ...context.repo,
+                ref: `heads/${branchName}`
+              });
+              const baseCommitSha = currentRef.data.object.sha;
               
-              // 提取约束信息用于文档
-              let constraintsSummary = '';
-              if (parentSpec) {
-                // 检查是否有约束部分
-                const constraintMatch = parentSpec.match(/--- \[父级 Issue 前端约束[^\]]*\] ---([\s\S]*?)(?=\n---|$)/);
-                if (constraintMatch) {
-                  constraintsSummary = constraintMatch[1].trim();
-                  // 限制长度，避免文档过长
-                  if (constraintsSummary.length > 2000) {
-                    constraintsSummary = constraintsSummary.substring(0, 2000) + '\n\n... (内容已截断，完整内容请查看父级 Issue)';
+              // 2. 获取基础 tree（这会保留所有已存在的文件）
+              const baseCommit = await github.rest.git.getCommit({
+                ...context.repo,
+                commit_sha: baseCommitSha
+              });
+              const baseTreeSha = baseCommit.data.tree.sha;
+              
+              console.log(`📋 基础 commit: ${baseCommitSha.substring(0, 7)}, tree: ${baseTreeSha.substring(0, 7)}`);
+              
+              // 3. 构建文件树：为所有要提交的文件创建 blob
+              const treeItems = [];
+              
+              for (const file of allFilesToCommit) {
+                if (file.path === docPath) {
+                  console.log(`📄 实施方案文档: ${file.path}`);
+                } else {
+                  console.log(`📝 ${file.action}: ${file.path}`);
+                }
+                
+                // 创建 blob
+                const blob = await github.rest.git.createBlob({
+                  ...context.repo,
+                  content: Buffer.from(file.content).toString('base64'),
+                  encoding: 'base64'
+                });
+                
+                // 添加到 tree（只包含要更新/添加的文件）
+                treeItems.push({
+                  path: file.path,
+                  mode: '100644', // 普通文件
+                  type: 'blob',
+                  sha: blob.data.sha
+                });
+                
+                // 记录文件变更（不包括文档）
+                if (file.path !== docPath) {
+                  if (file.action === 'CREATE') {
+                    createdFiles.push(file.path);
+                  } else {
+                    modifiedFiles.push(file.path);
                   }
                 }
               }
               
-              // 构建实施方案文档（避免嵌套反引号导致 YAML 解析错误）
-              const branchInfo = parentIssueNumber 
-                ? '**父Issue**: #' + parentIssueNumber + '\n**分支**: `' + branchName + '`' 
-                : '**分支**: `' + branchName + '`';
-              
-              const createdFilesList = createdFiles.length > 0 
-                ? '**新建文件 (' + createdFiles.length + '):**\n' + createdFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
-                : '';
-              
-              const modifiedFilesList = modifiedFiles.length > 0 
-                ? '**修改文件 (' + modifiedFiles.length + '):**\n' + modifiedFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
-                : '';
-              
-              const constraintsSection = constraintsSummary 
-                ? '**前端约束（来自父级 Issue 评论，按时间顺序，后面的优先级更高）**:\n\n' + constraintsSummary + '\n\n' 
-                : '';
-              
-              const parentSpecSection = parentSpec && !constraintsSummary 
-                ? '**父级规范（优先级最高）**:\n\n' + parentSpec.split('\n').slice(0, 100).join('\n') + (parentSpec.split('\n').length > 100 ? '\n\n...' : '') + '\n' 
-                : '';
-              
-              const constraintsNote = constraintsSummary 
-                ? '\n**⚠️ 约束优先级说明**:\n- 前端约束来自父级 Issue 的多个评论\n- 按时间顺序处理，后面的约束会覆盖或补充前面的约束\n- 如果约束之间有冲突，以最新的约束为准\n' 
-                : '';
-              
-              const warningsList = warnings.length > 0 
-                ? warnings.map(w => `- ${w}`).join('\n') 
-                : '无警告';
-              
-              const parentIssueNote = parentIssueNumber 
-                ? '此 Issue 基于父 Issue #' + parentIssueNumber + '，使用同一分支开发' 
-                : '此 Issue 创建了新分支';
-              
-              const constraintsNote2 = constraintsSummary 
-                ? '前端约束可能来自父级 Issue 的多个评论，请仔细阅读所有约束' 
-                : '';
-              
-              docTitle = 'Issue #' + context.issue.number + ' 前端实施方案';
-              docPath = `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-              
-              implementationPlanDoc = '# ' + docTitle + '\n\n' +
-                '## 📋 需求信息\n\n' +
-                '**标题**: ' + process.env.ISSUE_TITLE + '\n\n' +
-                '**Issue**: #' + context.issue.number + '\n\n' +
-                branchInfo + '\n\n' +
-                '**创建时间**: ' + new Date().toISOString() + '\n\n' +
-                '---\n\n' +
-                '## 📝 需求描述\n\n' +
-                contextBody.split('\n').slice(0, 50).join('\n') + (contextBody.split('\n').length > 50 ? '\n\n...' : '') + '\n\n' +
-                '---\n\n' +
-                '## 🎯 实施方案\n\n' +
-                '### 文件变更清单\n\n' +
-                createdFilesList + '\n' +
-                modifiedFilesList + '\n' +
-                '### 项目结构约束\n\n' +
-                constraintsSection +
-                parentSpecSection +
-                '**默认项目结构规范**:\n' +
-                '- 页面文件: `frontend/app/[route]/page.tsx`\n' +
-                '- 布局文件: `frontend/app/[route]/layout.tsx`\n' +
-                '- 通用组件: `frontend/components/ui/`\n' +
-                '- 业务组件: `frontend/components/features/`\n' +
-                '- Hooks: `frontend/hooks/`\n' +
-                '- 工具函数: `frontend/lib/utils/`\n' +
-                '- 类型定义: `frontend/types/`\n\n' +
-                constraintsNote + '\n' +
-                '---\n\n' +
-                '## ⚠️ 警告\n\n' +
-                warningsList + '\n\n' +
-                '---\n\n' +
-                '## 📌 注意事项\n\n' +
-                '1. 此文档由 Agent Builder 自动生成\n' +
-                '2. 请验证代码变更后再合并 PR\n' +
-                '3. ' + parentIssueNote + '\n' +
-                (constraintsNote2 ? '4. ' + constraintsNote2 + '\n' : '');
-            }
-            
-            // 保存实施方案文档
-            if (implementationPlanDoc) {
-              let docSha;
-              try {
-                const { data } = await github.rest.repos.getContent({ 
-                  ...context.repo, 
-                  path: docPath, 
-                  ref: branchName 
-                });
-                docSha = data.sha;
-              } catch (e) {}
-              
-              const commitMessage = parentIssueNumber && parentImplementationPlan
-                ? `docs(fe): update implementation plan from parent issue #${parentIssueNumber}`
-                : `docs(fe): add implementation plan for issue #${context.issue.number}`;
-              
-              await github.rest.repos.createOrUpdateFileContents({
+              // 4. 创建新的 tree（使用 base_tree 保留所有已存在的文件，只更新 treeItems 中的文件）
+              const newTree = await github.rest.git.createTree({
                 ...context.repo,
-                path: docPath,
-                message: commitMessage,
-                content: Buffer.from(implementationPlanDoc).toString('base64'),
-                branch: branchName,
-                sha: docSha
+                base_tree: baseTreeSha, // 关键：使用 base_tree 保留所有已存在的文件
+                tree: treeItems // 只更新/添加这些文件
               });
               
-              console.log(`📄 已保存实施方案文档: ${docPath}`);
+              console.log(`🌳 新 tree 已创建: ${newTree.data.sha.substring(0, 7)}`);
+              
+              // 5. 创建 commit（一个子 issue 一个提交）
+              const commitMessage = `feat(fe): implement issue #${context.issue.number}${parentIssueNumber ? ` (parent: #${parentIssueNumber})` : ''}\n\n` +
+                (createdFiles.length > 0 ? `新建: ${createdFiles.length} 个文件\n` : '') +
+                (modifiedFiles.length > 0 ? `修改: ${modifiedFiles.length} 个文件\n` : '') +
+                (docPath ? `实施方案文档: ${docPath}` : '');
+              
+              const newCommit = await github.rest.git.createCommit({
+                ...context.repo,
+                message: commitMessage,
+                tree: newTree.data.sha,
+                parents: [baseCommitSha] // 关键：使用当前分支的 commit 作为父节点，保留历史
+              });
+              
+              console.log(`📝 新 commit 已创建: ${newCommit.data.sha.substring(0, 7)}`);
+              
+              // 6. 更新分支引用（这会保留所有历史提交）
+              await github.rest.git.updateRef({
+                ...context.repo,
+                ref: `heads/${branchName}`,
+                sha: newCommit.data.sha
+              });
+              
+              console.log(`✅ 批量提交完成: ${commitMessage}`);
+              if (docPath) {
+                console.log(`📄 实施方案文档已包含在提交中: ${docPath}`);
+              }
+            } else {
+              console.log(`⚠️ 没有文件需要提交`);
             }
 
             // 10. 创建或更新 PR（默认创建 Draft PR，需要验证）
@@ -911,20 +920,7 @@ jobs:
             if (warnings.length > 0) {
               prBody += '\n### ⚠️ 警告\n' + warnings.map(w => '- ' + w).join('\n');
             }
-            
-            // 确定实施方案文档路径
-            const planDocPath = (parentIssueNumber && parentImplementationPlan)
-              ? `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`
-              : `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-            
-            prBody += '\n\n### 📄 实施方案文档\n\n';
-            if (parentIssueNumber && parentImplementationPlan) {
-              prBody += `实施方案来自父 Issue #${parentIssueNumber}，已保存到: \`${planDocPath}\`\n`;
-              prBody += `同一分支下的所有子 Issues 都基于此方案开发。\n`;
-            } else {
-              prBody += `实施方案已保存到: \`${planDocPath}\`\n`;
-            }
-            
+            prBody += `\n\n### 📄 实施方案文档\n\n实施方案已保存到: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n`;
             prBody += '\n\n---\n';
             prBody += `指令: \`/code-zhangxiaohao-agent\`\n`;
             prBody += `Issue: #${context.issue.number}\n`;
@@ -959,14 +955,10 @@ jobs:
                   state: 'open' // 确保 PR 是打开状态
                 });
                 
-              const planDocPathComment = (parentIssueNumber && parentImplementationPlan)
-                ? `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`
-                : `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-              
                 await github.rest.issues.createComment({
                   ...context.repo,
                   issue_number: context.issue.number,
-                  body: `✅ PR 已更新: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`${planDocPath}\`${parentIssueNumber && parentImplementationPlan ? ` (来自父 Issue #${parentIssueNumber})` : ''}`
+                  body: `✅ PR 已更新: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\``
                 });
               } else {
                 // 创建新的 Draft PR
@@ -979,24 +971,16 @@ jobs:
                   draft: true // 默认创建 Draft PR
                 });
                 
-              const planDocPathComment = (parentIssueNumber && parentImplementationPlan)
-                ? `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`
-                : `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-              
                 await github.rest.issues.createComment({
                   ...context.repo,
                   issue_number: context.issue.number,
-                  body: `✅ Draft PR 已创建: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`${planDocPath}\`${parentIssueNumber && parentImplementationPlan ? ` (来自父 Issue #${parentIssueNumber})` : ''}\n\n**请验证代码后，将 PR 标记为 Ready for Review**`
+                  body: `✅ Draft PR 已创建: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n\n**请验证代码后，将 PR 标记为 Ready for Review**`
                 });
               }
             } catch(e) {
-              const planDocPathComment = (parentIssueNumber && parentImplementationPlan)
-                ? `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`
-                : `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-              
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: context.issue.number,
-                body: `分支已更新: \`${branchName}\`\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}\n\n📄 实施方案文档: \`${planDocPath}\`${parentIssueNumber && parentImplementationPlan ? ` (来自父 Issue #${parentIssueNumber})` : ''}\n\n⚠️ PR 创建失败: ${e.message}`
+                body: `分支已更新: \`${branchName}\`\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n\n⚠️ PR 创建失败: ${e.message}`
               });
             }
