@@ -2,12 +2,13 @@ name: AI Product PM
 
 on:
   issues:
-    types: [labeled]
+    types: [opened, labeled]
     labels: ['💡 insight']
+    if: github.event.label.name == '💡 insight'
 
 jobs:
   pm-insight:
-    # if: github.event.label.name == '💡 insight'
+    if: github.event.label.name == '💡 insight'
     runs-on: ubuntu-latest
     permissions:
       issues: write
