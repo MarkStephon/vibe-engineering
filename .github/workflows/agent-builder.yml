@@ -152,7 +152,6 @@ jobs:
             let frontendSpec = '';
             let frontendPlan = '';
             let branchFromComment = null; // 从评论中提取的分支信息
-            const generalComments = [];
             const referencedContent = []; // 存储引用的内容
             
             // 找到触发评论（包含 /code-zhangxiaohao-agent 的评论）
@@ -211,19 +210,15 @@ jobs:
               }
             }
             
-            // 按时间排序（最早的在前）
-            const sortedComments = comments.data.sort((a, b) => 
-              new Date(a.created_at) - new Date(b.created_at)
-            );
-            
-            sortedComments.forEach(comment => {
-              const hasSpec = frontendSpecMarkers.some(marker => marker.test(comment.body));
-              const hasPlan = frontendPlanMarkers.some(marker => marker.test(comment.body));
+            // 只在触发评论中提取规范和方案信息
+            if (triggerComment) {
+              const hasSpec = frontendSpecMarkers.some(marker => marker.test(triggerComment.body));
+              const hasPlan = frontendPlanMarkers.some(marker => marker.test(triggerComment.body));
               
-              // 检查是否包含分支信息（后面的评论优先级更高）
+              // 检查是否包含分支信息
               let branchMatch = null;
               for (const marker of branchMarkers) {
-                const match = comment.body.match(marker);
+                const match = triggerComment.body.match(marker);
                 if (match) {
                   branchMatch = match;
                   break;
@@ -231,17 +226,15 @@ jobs:
               }
               
               if (hasSpec) {
-                // 提取前端规范（后面的会覆盖前面的）
-                frontendSpec = comment.body;
-                console.log(`📋 发现前端规范: ${comment.html_url}`);
-              } else if (hasPlan) {
-                // 提取前端方案（后面的会覆盖前面的）
-                frontendPlan = comment.body;
-                console.log(`📋 发现前端方案: ${comment.html_url}`);
-              } else if (branchMatch) {
-                // 提取分支信息（后面的会覆盖前面的）
+                frontendSpec = triggerComment.body;
+                console.log(`📋 发现前端规范: ${triggerComment.html_url}`);
+              }
+              if (hasPlan) {
+                frontendPlan = triggerComment.body;
+                console.log(`📋 发现前端方案: ${triggerComment.html_url}`);
+              }
+              if (branchMatch) {
                 const branchValue = branchMatch[1].trim();
-                // 如果是 issue 号，转换为分支名
                 if (/^\d+$/.test(branchValue)) {
                   branchFromComment = `zhangxiaohao/issue-${branchValue}`;
                 } else if (branchValue.startsWith('zhangxiaohao/issue-')) {
@@ -249,12 +242,14 @@ jobs:
                 } else {
                   branchFromComment = branchValue;
                 }
-                console.log(`🔗 从评论中发现分支信息: ${branchFromComment} (${comment.html_url})`);
-              } else {
-                // 保留普通评论
-                generalComments.push(comment);
+                console.log(`🔗 从评论中发现分支信息: ${branchFromComment} (${triggerComment.html_url})`);
               }
-            });
+            }
+            
+            // 收集其他评论作为讨论历史（排除触发评论）
+            const generalComments = comments.data
+              .filter(c => !c.body.includes('/code-zhangxiaohao-agent'))
+              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             
             const discussionHistory = generalComments
               .map(c => `[User: ${c.user.login}]:\n${c.body}`)
