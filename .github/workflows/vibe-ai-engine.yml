@@ -2,7 +2,7 @@ name: AI Tech Architect (shadcn + Go DB)
 
 on:
   issues:
-    types: [labeled]
+    types: [opened, labeled]
     # ✅ 直接在 workflow 层面过滤标签
     labels: ['🛠 tech']
     if: github.event.label.name == '🛠 tech'
