@@ -246,7 +246,10 @@ jobs:
               }
             }
             
-            // 收集其他评论作为讨论历史（排除触发评论）
+            // 收集触发评论内容（用于 ISSUE_COMMENTS 变量）
+            const triggerCommentContent = triggerComment ? triggerComment.body : '';
+            
+            // 收集其他评论作为讨论历史（排除触发评论，用于向后兼容）
             const generalComments = comments.data
               .filter(c => !c.body.includes('/code-zhangxiaohao-agent'))
               .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -449,6 +452,18 @@ jobs:
               }
             }
 
+            // 读取 prompt 模板文件
+            let promptTemplate = '';
+            const promptTemplatePath = '.github/prompts/zhangxiaohao-prompt.md';
+            const promptTemplateExists = await fileExists(promptTemplatePath);
+            if (promptTemplateExists) {
+              const template = await readFileContent(promptTemplatePath);
+              if (template) {
+                promptTemplate = template;
+                console.log('📝 已读取 prompt 模板: ' + promptTemplatePath);
+              }
+            }
+
             // 5. 构建结构化 Prompt
             const existingFilesStr = existingFilesContext.map(f => 
               '### ' + f.action + ': ' + f.path + '\n```\n' + f.content + '\n```'
@@ -580,118 +595,21 @@ jobs:
                 '- 遵循目录结构规范\n\n';
             }
             
-            const prompt = '你是一名 Next.js 前端专家，负责根据需求精准修改或创建代码。\n\n' +
-              '【项目结构规范（默认）】\n' +
-              '- 页面文件: frontend/app/[route]/page.tsx\n' +
-              '- 布局文件: frontend/app/[route]/layout.tsx\n' +
-              '- 通用组件: frontend/components/ui/\n' +
-              '- 业务组件: frontend/components/features/\n' +
-              '- Hooks: frontend/hooks/\n' +
-              '- 工具函数: frontend/lib/utils/\n' +
-              '- 类型定义: frontend/types/\n' +
-              frontendSpecNote +
-              parentSpecNote +
-              styleGuideNote +
-              pageCheckNote +
-              '\n【当前目录结构】\n' +
-              projectTree + '\n\n' +
-              '【现有文件内容】\n' +
-              '以下文件已存在于项目中：\n' +
-              existingFilesStr + '\n\n' +
-              '【待创建文件路径】\n' +
-              '以下路径被提及但不存在，需要新建：\n' +
-              newFilesList + '\n\n' +
-              '【package.json】\n' +
-              packageJsonContent + '\n\n' +
-              '【需求】\n' +
-              '标题：' + process.env.ISSUE_TITLE + '\n' +
-              '描述：' + contextBody + '\n' +
-              '讨论：' + discussionHistory + '\n\n' +
-              '【操作规则】\n' +
-              '1. **MODIFY（修改现有文件）**：\n' +
-              '   - 基于现有代码增量修改\n' +
-              '   - 保留所有与本次需求无关的代码\n' +
-              '   - 保留所有现有 import 语句\n' +
-              '   - 保留所有现有函数和组件\n' +
-              '   - 只添加或修改需求相关的部分\n' +
-              '   - 输出完整的可运行代码\n\n' +
-              '2. **CREATE（创建新文件）**：\n' +
-              '   - 只有在文件不存在时才能创建\n' +
-              '   - **如果父级规范中明确指定了文件路径（如 app/(main)/video/page.tsx），必须严格按照父级规范执行**\n' +
-              '   - 如果父级规范未指定，页面放在 frontend/app/[route]/page.tsx\n' +
-              '   - 组件必须放在 frontend/components/ 下（或父级规范指定的位置）\n' +
-              '   - 检查是否有可复用的现有组件\n' +
-              '   - **优先使用【待创建文件路径】中列出的路径，这些路径来自父级规范和讨论**\n\n' +
-              '3. **CSS 布局规范**：\n' +
-              '   - **优先使用 Flexbox（flex）和 Grid（grid）布局**，而不是相对定位（relative positioning）\n' +
-              '   - 只有在 Flexbox 和 Grid 无法实现的情况下，才允许使用相对定位（position: relative）\n' +
-              '   - 避免使用 `position: relative` 进行布局，优先考虑 `display: flex`、`display: grid` 等现代布局方式\n' +
-              '   - 使用 Tailwind CSS 的布局类：`flex`、`grid`、`flex-col`、`flex-row`、`grid-cols-*`、`gap-*` 等\n' +
-              '   - 只有在需要绝对定位（absolute）的父容器时，才使用 `relative`\n\n' +
-              '4. **禁止操作**：\n' +
-              '   - 禁止删除现有代码\n' +
-              '   - 禁止重写已存在的文件（只能修改）\n' +
-              '   - 禁止在 app/ 目录创建非页面组件\n' +
-              '   - 禁止创建与现有组件功能重复的新组件\n' +
-              '   - **严禁在代码块内输出任何 Markdown 格式内容**（标题 ###、列表 -、分隔符 --- 等）\n' +
-              '   - **严禁在代码块内输出文档说明、实现说明、步骤说明等非代码内容**\n' +
-              '   - **代码块内只能包含纯代码，不能有任何文字说明或 Markdown 格式**\n' +
-              '   - 代码块必须从文件开头到结尾的完整代码，结束后立即关闭 ```\n\n' +
-              '【输出格式】\n' +
-              '每个文件使用以下格式，必须标明操作类型：\n\n' +
-              '### MODIFY: frontend/app/xxx/page.tsx\n' +
-              '```tsx\n' +
-              '(完整的修改后代码，仅代码，无分隔符，无文档说明)\n' +
-              '```\n\n' +
-              '### CREATE: frontend/components/features/xxx.tsx\n' +
-              '```tsx\n' +
-              '(新文件的完整代码，仅代码，无分隔符，无文档说明)\n' +
-              '```\n\n' +
-              '如需新增依赖：\n' +
-              '### MODIFY: frontend/package.json\n' +
-              '```json\n' +
-              '(完整的 package.json，仅 JSON，无分隔符，无文档说明)\n' +
-              '```\n\n' +
-              '【绝对禁止 - 代码块内容规则】\n' +
-              '代码块（```tsx 和 ```json 之间的内容）必须严格遵守以下规则：\n' +
-              '1. **只能包含可执行的代码**：TypeScript/TSX/JSON 代码，不能有任何其他内容\n' +
-              '2. **禁止任何 Markdown 格式**：\n' +
-              '   - 禁止 Markdown 标题（如 ### 标题、## 标题、# 标题）\n' +
-              '   - 禁止 Markdown 列表（如 - 项目、* 项目、1. 项目）\n' +
-              '   - 禁止 Markdown 分隔符（如 ---、***）\n' +
-              '   - 禁止 Markdown 注释（如 <!-- 注释 -->）\n' +
-              '3. **禁止任何文档说明**：\n' +
-              '   - 禁止实现说明、步骤说明、注释说明等文字描述\n' +
-              '   - 禁止在代码中添加步骤1、步骤2等说明性文字\n' +
-              '   - 禁止在代码末尾添加任何说明性内容\n' +
-              '4. **只允许代码注释**：\n' +
-              '   - 只允许使用 // 或 /* */ 格式的代码注释\n' +
-              '   - 注释必须是代码的一部分，不能是独立的说明段落\n' +
-              '5. **代码块必须完整**：\n' +
-              '   - 代码块必须从文件开头到文件结尾的完整代码\n' +
-              '   - 代码块结束后立即关闭 ```，不能有任何后续内容\n' +
-              '\n' +
-              '【示例 - 正确格式】\n' +
-              '### CREATE: frontend/app/test/page.tsx\n' +
-              '```tsx\n' +
-              '"use client";\n' +
-              '\n' +
-              'export default function TestPage() {\n' +
-              '  return <div>Test</div>;\n' +
-              '}\n' +
-              '```\n' +
-              '\n' +
-              '【示例 - 错误格式（禁止）】\n' +
-              '### CREATE: frontend/app/test/page.tsx\n' +
-              '```tsx\n' +
-              '"use client";\n' +
-              '\n' +
-              'export default function TestPage() {\n' +
-              '  return <div>Test</div>;\n' +
-              '}\n' +
-              '\n' +
-              '### 类型导出  <-- 禁止！这是 Markdown 标题\n' +
-              '```  <-- 禁止！代码块内不能有 Markdown';
+            // 构建 prompt：如果存在模板文件则使用模板，否则使用默认 prompt
+            let prompt = '';
+            if (promptTemplate) {
+              // 定义模板变量映射（只保留三个变量）
+              const templateVars = {
+                'ISSUE_TITLE': process.env.ISSUE_TITLE || '',
+                'ISSUE_BODY': process.env.ISSUE_BODY || '',
+                'ISSUE_COMMENTS': triggerCommentContent || ''
+              };
+              
+              // 统一替换所有模板变量
+              prompt = promptTemplate.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+                return templateVars[key] !== undefined ? templateVars[key] : match;
+              });
+            }
 
             console.log("🤖 调用 AI...");
 
