@@ -39,6 +39,19 @@
 内容：{{ISSUE_BODY}}
 触发评论：{{ISSUE_COMMENTS}}
 
+{{FRONTEND_SPEC}}
+
+{{PARENT_SPEC}}
+
+【前端开发规范】
+{{STYLE_GUIDE}}
+
+【项目依赖信息】
+{{PACKAGE_JSON}}
+
+【现有文件内容（供 MODIFY 操作参考）】
+{{EXISTING_FILES}}
+
 完成阶段一的思考后，直接进入阶段二输出代码。
 
 ────────────────────────────────────────

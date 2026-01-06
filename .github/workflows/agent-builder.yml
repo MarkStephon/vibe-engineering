@@ -531,9 +531,9 @@ jobs:
             // 构建页面检查提示
             let pageCheckNote = '';
             if (requiredPagePath) {
-              pageCheckNote = '\n\n【重要：必须创建页面】\n' +
+              pageCheckNote = '\n\n重要：必须创建页面\n' +
                 '检测到需求中提到了页面路径 ' + requiredPagePath + '，但该页面不存在。\n' +
-                '**你必须创建这个页面文件**，否则功能无法正常使用。\n' +
+                '你必须创建这个页面文件，否则功能无法正常使用。\n' +
                 '请确保在输出中包含：\n' +
                 '### CREATE: ' + requiredPagePath + '\n' +
                 '```tsx\n' +
@@ -541,35 +541,35 @@ jobs:
                 '```\n';
             } else if (newFilesList.includes('page.tsx') || contextBody.includes('页面') || contextBody.includes('page') || frontendSpec.includes('页面') || frontendPlan.includes('页面')) {
               // 如果提到了页面但没有找到具体路径，提醒 AI 检查
-              pageCheckNote = '\n\n【页面检查】\n' +
+              pageCheckNote = '\n\n页面检查\n' +
                 '需求中提到了页面相关的内容，请检查是否需要创建新的页面文件。\n' +
                 '如果需要创建页面，请使用正确的路径格式（如 frontend/app/(main)/video/page.tsx）。\n' +
-                '**如果前端规范或前端方案中提到了页面路径，必须严格按照规范创建页面**。\n';
+                '如果前端规范或前端方案中提到了页面路径，必须严格按照规范创建页面。\n';
             }
             
             // 构建前端规范和方案提示（优先级最高）
             let frontendSpecNote = '';
             if (frontendSpec || frontendPlan) {
-              frontendSpecNote = '\n\n【前端规范和方案（最高优先级 - 必须严格遵守）】\n';
-              frontendSpecNote += '**重要：以下规范优先级高于所有其他规范（包括基础开发规范文档）。如有冲突，必须优先遵循以下规范。**\n\n';
+              frontendSpecNote = '\n\n前端规范和方案（最高优先级 - 必须严格遵守）\n';
+              frontendSpecNote += '重要：以下规范优先级高于所有其他规范（包括基础开发规范文档）。如有冲突，必须优先遵循以下规范。\n\n';
               if (frontendSpec) {
                 // 检查是否来自父级 issue（通过检查 contextBody 中是否包含"来自父级 Issue"）
                 const isFromParent = contextBody.includes('前端规范（来自父级 Issue）');
                 const source = isFromParent ? '（来自父级 Issue 评论）' : '（来自当前 Issue 评论）';
-                frontendSpecNote += `**前端规范${source}**：\n` + frontendSpec + '\n\n';
+                frontendSpecNote += '前端规范' + source + '：\n' + frontendSpec + '\n\n';
               }
               if (frontendPlan) {
                 // 检查是否来自父级 issue
                 const isFromParent = contextBody.includes('前端方案（来自父级 Issue）');
                 const source = isFromParent ? '（来自父级 Issue 评论）' : '（来自当前 Issue 评论）';
-                frontendSpecNote += `**前端方案${source}**：\n` + frontendPlan + '\n\n';
+                frontendSpecNote += '前端方案' + source + '：\n' + frontendPlan + '\n\n';
               }
             }
             
             // 构建父级规范提示
             let parentSpecNote = '';
             if (parentSpec) {
-              parentSpecNote = '\n\n【父级 Issue 基本信息】\n' +
+              parentSpecNote = '\n\n父级 Issue 基本信息\n' +
                 '以下内容来自父级 Issue，供参考：\n' +
                 parentSpec + '\n';
             }
@@ -579,13 +579,13 @@ jobs:
             if (styleGuideContent) {
               const hasFrontendSpec = frontendSpec || frontendPlan;
               const priorityNote = hasFrontendSpec 
-                ? '\n**注意：这是基础开发规范。如果上面的前端规范和方案中有冲突的规范，优先遵循上面的规范。**\n'
-                : '\n**这是项目的基础前端开发规范，所有代码必须严格遵循。**\n';
+                ? '\n注意：这是基础开发规范。如果上面的前端规范和方案中有冲突的规范，优先遵循上面的规范。\n'
+                : '\n这是项目的基础前端开发规范，所有代码必须严格遵循。\n';
               
-              styleGuideNote = '\n\n【前端开发规范（基础规范）】\n' +
+              styleGuideNote = '\n\n前端开发规范（基础规范）\n' +
                 priorityNote +
                 styleGuideContent + '\n\n' +
-                '**基础规范要点**：\n' +
+                '基础规范要点：\n' +
                 '- 必须使用语义化的 Tailwind 颜色类（如 bg-background、text-foreground），禁止硬编码颜色值\n' +
                 '- 业务颜色必须使用 text-profit（盈利）或 text-loss（亏损）\n' +
                 '- 组件必须从 @/components/ui 导入 shadcn/ui 组件（New York 风格）\n' +
@@ -598,17 +598,27 @@ jobs:
             // 构建 prompt：如果存在模板文件则使用模板，否则使用默认 prompt
             let prompt = '';
             if (promptTemplate) {
-              // 定义模板变量映射（只保留三个变量）
+              // 定义模板变量映射
               const templateVars = {
                 'ISSUE_TITLE': process.env.ISSUE_TITLE || '',
                 'ISSUE_BODY': process.env.ISSUE_BODY || '',
-                'ISSUE_COMMENTS': triggerCommentContent || ''
+                'ISSUE_COMMENTS': triggerCommentContent || '',
+                'FRONTEND_SPEC': frontendSpecNote || '',
+                'PARENT_SPEC': parentSpecNote || '',
+                'STYLE_GUIDE': styleGuideNote || '',
+                'PACKAGE_JSON': packageJsonContent || '{}',
+                'EXISTING_FILES': existingFilesStr || '无现有文件需要修改'
               };
               
               // 统一替换所有模板变量
               prompt = promptTemplate.replace(/\{\{(\w+)\}\}/g, (match, key) => {
                 return templateVars[key] !== undefined ? templateVars[key] : match;
               });
+              
+              // 追加页面检查提示（如果存在）
+              if (pageCheckNote) {
+                prompt += pageCheckNote;
+              }
             }
 
             console.log("🤖 调用 AI...");
