@@ -109,201 +109,169 @@ jobs:
               return errors;
             };
 
-            // 1. 读取讨论记录
-            console.log("📥 读取讨论记录...");
+            // 1. 读取当前 issue 的评论
+            console.log("📥 读取当前 issue 的评论...");
             const comments = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: context.issue.number
             });
             
-            const fullDiscussionText = comments.data.map(c => c.body).join('\n') + '\n' + process.env.ISSUE_BODY;
-            const discussionHistory = comments.data
+            // 识别前端规范和前端方案的标记
+            const frontendSpecMarkers = [
+              /前端规范/i,
+              /前端约束/i,
+              /frontend spec/i,
+              /frontend constraint/i,
+              /\[前端规范\]/i,
+              /\[前端约束\]/i,
+              /## 前端规范/i,
+              /## 前端约束/i
+            ];
+            
+            const frontendPlanMarkers = [
+              /🏗️\s*前端实施方案/i,
+              /🏗️\s*前端实施计划/i,
+              /前端实施方案/i,
+              /前端实施计划/i,
+              /frontend implementation plan/i,
+              /frontend implementation/i
+            ];
+            
+            // 识别分支策略的标记
+            const branchMarkers = [
+              /使用分支[\s:：]+([^\s\n]+)/i,
+              /在分支[\s:：]+([^\s\n]+)/i,
+              /分支[\s:：]+([^\s\n]+)/i,
+              /branch[\s:：]+([^\s\n]+)/i,
+              /使用[\s:：]+([^\s\n]+)\s*分支/i,
+              /基于[\s:：]+([^\s\n]+)\s*分支/i,
+              /zhangxiaohao\/issue-(\d+)/i
+            ];
+            
+            // 从当前 issue 的评论中提取前端规范、前端方案和分支信息
+            let frontendSpec = '';
+            let frontendPlan = '';
+            let branchFromComment = null; // 从评论中提取的分支信息
+            const generalComments = [];
+            
+            // 按时间排序（最早的在前）
+            const sortedComments = comments.data.sort((a, b) => 
+              new Date(a.created_at) - new Date(b.created_at)
+            );
+            
+            sortedComments.forEach(comment => {
+              const hasSpec = frontendSpecMarkers.some(marker => marker.test(comment.body));
+              const hasPlan = frontendPlanMarkers.some(marker => marker.test(comment.body));
+              
+              // 检查是否包含分支信息（后面的评论优先级更高）
+              let branchMatch = null;
+              for (const marker of branchMarkers) {
+                const match = comment.body.match(marker);
+                if (match) {
+                  branchMatch = match;
+                  break;
+                }
+              }
+              
+              if (hasSpec) {
+                // 提取前端规范（后面的会覆盖前面的）
+                frontendSpec = comment.body;
+                console.log(`📋 发现前端规范: ${comment.html_url}`);
+              } else if (hasPlan) {
+                // 提取前端方案（后面的会覆盖前面的）
+                frontendPlan = comment.body;
+                console.log(`📋 发现前端方案: ${comment.html_url}`);
+              } else if (branchMatch) {
+                // 提取分支信息（后面的会覆盖前面的）
+                const branchValue = branchMatch[1].trim();
+                // 如果是 issue 号，转换为分支名
+                if (/^\d+$/.test(branchValue)) {
+                  branchFromComment = `zhangxiaohao/issue-${branchValue}`;
+                } else if (branchValue.startsWith('zhangxiaohao/issue-')) {
+                  branchFromComment = branchValue;
+                } else {
+                  branchFromComment = branchValue;
+                }
+                console.log(`🔗 从评论中发现分支信息: ${branchFromComment} (${comment.html_url})`);
+              } else {
+                // 保留普通评论
+                generalComments.push(comment);
+              }
+            });
+            
+            const discussionHistory = generalComments
               .map(c => `[User: ${c.user.login}]:\n${c.body}`)
               .join("\n\n---\n\n");
-
-            // 2. 读取父级规范（包含评论）并确定分支策略
+            
+            // 合并所有文本来源（用于文件路径识别）
+            const fullDiscussionText = comments.data.map(c => c.body).join('\n') + '\n' + process.env.ISSUE_BODY;
             let contextBody = process.env.ISSUE_BODY;
+            if (frontendSpec) {
+              contextBody += '\n\n--- [前端规范] ---\n' + frontendSpec;
+            }
+            if (frontendPlan) {
+              contextBody += '\n\n--- [前端方案] ---\n' + frontendPlan;
+            }
+
+            // 2. 读取父级 issue 基本信息，如果当前 issue 没有前端规范和前端方案，则从父级 issue 的评论中提取
             let parentSpec = '';
-            let parentIssueNumber = null;
-            let parentImplementationPlan = null; // 父级前端实施方案
             const parentRegex = /(?:Parent|Ref|父任务|父级|父需求|关联父需求)[\s:：]+#(\d+)/i;
-            const parentMatch = contextBody.match(parentRegex);
+            const parentMatch = contextBody.match(parentRegex) || process.env.ISSUE_BODY.match(parentRegex);
+            
             if (parentMatch) {
               try {
                 const parentId = parentMatch[1];
-                parentIssueNumber = parseInt(parentId);
-                console.log(`🔗 读取父级规范: #${parentId}`);
+                console.log(`🔗 读取父级 issue: #${parentId}`);
                 
-                // 读取父级 issue body
+                // 读取父级 issue 的基本信息（body）
                 const p = await github.rest.issues.get({ ...context.repo, issue_number: parentId });
-                parentSpec = p.data.body;
+                parentSpec = p.data.body || '';
                 
-                // 读取父级 issue 的评论（可能包含架构师的设计方案和前端约束）
-                const parentComments = await github.rest.issues.listComments({
-                  ...context.repo,
-                  issue_number: parentId
-                });
-                
-                // 智能提取前端约束和实施方案：按时间顺序处理，后面的评论优先级更高
-                if (parentComments.data.length > 0) {
-                  // 按创建时间排序（最早的在前）
-                  const sortedComments = parentComments.data.sort((a, b) => 
+                // 如果当前 issue 的评论中没有前端规范和前端方案，则从父级 issue 的评论中提取
+                if (!frontendSpec && !frontendPlan) {
+                  console.log(`📋 当前 issue 没有前端规范和前端方案，尝试从父级 issue 评论中提取...`);
+                  
+                  // 读取父级 issue 的评论
+                  const parentComments = await github.rest.issues.listComments({
+                    ...context.repo,
+                    issue_number: parentId
+                  });
+                  
+                  // 按时间排序（最早的在前）
+                  const sortedParentComments = parentComments.data.sort((a, b) => 
                     new Date(a.created_at) - new Date(b.created_at)
                   );
                   
-                  // 识别前端实施方案的标记（🏗️ 前端实施方案）
-                  const implementationPlanMarkers = [
-                    /🏗️\s*前端实施方案/i,
-                    /🏗️\s*前端实施计划/i,
-                    /前端实施方案/i,
-                    /frontend implementation plan/i,
-                    /frontend implementation/i
-                  ];
-                  
-                  // 识别前端约束的标记模式（支持多种格式）
-                  const constraintMarkers = [
-                    /前端约束/i,
-                    /前端规范/i,
-                    /frontend constraint/i,
-                    /frontend spec/i,
-                    /\[前端约束\]/i,
-                    /\[前端规范\]/i,
-                    /## 前端约束/i,
-                    /## 前端规范/i,
-                    /### 前端约束/i,
-                    /### 前端规范/i
-                  ];
-                  
-                  // 识别约束更新/撤销标记
-                  const updateMarkers = [
-                    /更新约束/i,
-                    /更新规范/i,
-                    /撤销约束/i,
-                    /撤销规范/i,
-                    /update constraint/i,
-                    /revoke constraint/i
-                  ];
-                  
-                  // 提取前端实施方案和约束的评论
-                  const constraintComments = [];
-                  const generalComments = [];
-                  
-                  sortedComments.forEach(comment => {
-                    // 优先检查是否是前端实施方案
-                    const hasImplementationPlan = implementationPlanMarkers.some(marker => 
-                      marker.test(comment.body)
-                    );
+                  sortedParentComments.forEach(comment => {
+                    const hasSpec = frontendSpecMarkers.some(marker => marker.test(comment.body));
+                    const hasPlan = frontendPlanMarkers.some(marker => marker.test(comment.body));
                     
-                    const hasConstraint = constraintMarkers.some(marker => 
-                      marker.test(comment.body)
-                    );
-                    
-                    const isUpdate = updateMarkers.some(marker => 
-                      marker.test(comment.body)
-                    );
-                    
-                    if (hasImplementationPlan) {
-                      // 提取前端实施方案（取最新的）
-                      parentImplementationPlan = {
-                        body: comment.body,
-                        user: comment.user.login,
-                        createdAt: comment.created_at,
-                        url: comment.html_url
-                      };
-                      console.log(`📋 发现父级前端实施方案: ${comment.html_url}`);
-                    } else if (hasConstraint || isUpdate) {
-                      constraintComments.push({
-                        body: comment.body,
-                        user: comment.user.login,
-                        createdAt: comment.created_at,
-                        url: comment.html_url,
-                        isUpdate: isUpdate
-                      });
-                    } else {
-                      // 也保留普通评论，可能包含重要信息
-                      generalComments.push({
-                        body: comment.body,
-                        user: comment.user.login,
-                        createdAt: comment.created_at
-                      });
+                    if (hasSpec && !frontendSpec) {
+                      // 提取父级前端规范（后面的会覆盖前面的）
+                      frontendSpec = comment.body;
+                      console.log(`📋 从父级 issue 发现前端规范: ${comment.html_url}`);
+                    } else if (hasPlan && !frontendPlan) {
+                      // 提取父级前端方案（后面的会覆盖前面的）
+                      frontendPlan = comment.body;
+                      console.log(`📋 从父级 issue 发现前端方案: ${comment.html_url}`);
                     }
                   });
                   
-                  // 构建约束文本：后面的评论会覆盖前面的
-                  let constraintsText = '';
-                  if (constraintComments.length > 0) {
-                    console.log(`📋 发现 ${constraintComments.length} 个包含前端约束的评论`);
-                    
-                    // 提取约束内容（去除标记，只保留实际约束）
-                    const extractedConstraints = constraintComments.map((c, index) => {
-                      let constraintContent = c.body;
-                      
-                      // 尝试提取约束部分（在标记之后的内容）
-                      const constraintMatch = constraintContent.match(
-                        /(?:前端约束|前端规范|frontend constraint|frontend spec|\[前端约束\]|\[前端规范\]|## 前端约束|## 前端规范|### 前端约束|### 前端规范|前端实施方案|frontend implementation|更新约束|更新规范|撤销约束|撤销规范|update constraint|revoke constraint)[\s:：]*\n?([\s\S]*)/i
-                      );
-                      
-                      if (constraintMatch && constraintMatch[1]) {
-                        constraintContent = constraintMatch[1].trim();
-                      }
-                      
-                      return {
-                        content: constraintContent,
-                        user: c.user,
-                        createdAt: c.created_at,
-                        url: c.url,
-                        order: index + 1,
-                        isUpdate: c.isUpdate,
-                        timestamp: new Date(c.created_at).getTime()
-                      };
-                    });
-                    
-                    // 按时间顺序合并约束（后面的优先级更高）
-                    constraintsText = '--- [父级 Issue 前端约束 - 按时间顺序，后面的优先级更高] ---\n\n';
-                    constraintsText += `**重要提示**：共有 ${extractedConstraints.length} 个约束评论，按时间顺序处理。\n`;
-                    constraintsText += `**后面的约束会覆盖或补充前面的约束**，请仔细阅读所有约束，以最新的为准。\n\n`;
-                    
-                    extractedConstraints.forEach((constraint, index) => {
-                      const timeStr = new Date(constraint.createdAt).toISOString().replace('T', ' ').substring(0, 19);
-                      const typeLabel = constraint.isUpdate ? '【更新约束】' : '【约束】';
-                      
-                      constraintsText += `${typeLabel} #${constraint.order} - ${constraint.user} @ ${timeStr}\n`;
-                      constraintsText += `来源: ${constraint.url}\n\n`;
-                      constraintsText += `${constraint.content}\n\n`;
-                      
-                      if (index < extractedConstraints.length - 1) {
-                        constraintsText += '---\n\n';
-                      }
-                    });
-                    
-                    // 添加约束优先级说明
-                    if (extractedConstraints.length > 1) {
-                      const latestConstraint = extractedConstraints[extractedConstraints.length - 1];
-                      constraintsText += `\n**⚠️ 约束优先级说明**：\n`;
-                      constraintsText += `- 最新约束：约束 #${latestConstraint.order} (${latestConstraint.user} @ ${new Date(latestConstraint.createdAt).toISOString().substring(0, 10)})\n`;
-                      constraintsText += `- 如果约束之间有冲突，以最新的约束为准\n`;
-                      constraintsText += `- 如果约束是"更新"类型，表示是对之前约束的修改\n`;
-                    }
+                  // 更新 contextBody（如果从父级提取到了规范和方案）
+                  if (frontendSpec) {
+                    contextBody += '\n\n--- [前端规范（来自父级 Issue）] ---\n' + frontendSpec;
                   }
-                  
-                  // 合并所有内容
-                  if (constraintsText) {
-                    parentSpec += '\n\n' + constraintsText;
-                  }
-                  
-                  // 如果有其他评论（不包含约束标记），也添加进去（但标记为一般讨论）
-                  if (generalComments.length > 0) {
-                    const generalText = generalComments
-                      .map(c => `[${c.user} @ ${new Date(c.createdAt).toISOString()}]:\n${c.body}`)
-                      .join("\n\n---\n\n");
-                    parentSpec += '\n\n--- [父级 Issue 其他讨论] ---\n' + generalText;
+                  if (frontendPlan) {
+                    contextBody += '\n\n--- [前端方案（来自父级 Issue）] ---\n' + frontendPlan;
                   }
                 }
                 
-                contextBody += '\n\n--- [父级规范 - 必须严格遵守] ---\n' + parentSpec;
-                console.log(`✅ 已读取父级规范，长度: ${parentSpec.length} 字符`);
+                if (parentSpec) {
+                  contextBody += '\n\n--- [父级 Issue 基本信息] ---\n' + parentSpec;
+                  console.log(`✅ 已读取父级 issue 基本信息，长度: ${parentSpec.length} 字符`);
+                }
               } catch(e) {
-                console.log(`⚠️ 读取父级规范失败: ${e.message}`);
+                console.log(`⚠️ 读取父级 issue 失败: ${e.message}`);
               }
             }
 
@@ -339,7 +307,7 @@ jobs:
             
             console.log(`📋 从父级规范和讨论中识别到 ${foundPaths.size} 个文件路径`);
             
-            // 收集现有文件和新文件（初步检查，基于 main 分支）
+            // 收集现有文件和新文件
             const existingFilesContext = [];
             const newFilePaths = [];
             
@@ -397,26 +365,147 @@ jobs:
             const pkgContent = await readFileContent(pkgPath);
             if (pkgContent) packageJsonContent = pkgContent;
 
-            // 5. 构建结构化 Prompt（使用占位符，稍后更新）
-            // 注意：existingFilesStr 和 newFilesList 会在确定分支后更新
-            let existingFilesStr = existingFilesContext.map(f => 
+            // 读取前端开发规范文档
+            let styleGuideContent = '';
+            const styleGuidePath = 'frontend/STYLE_GUIDE.md';
+            const styleGuideExists = await fileExists(styleGuidePath);
+            if (styleGuideExists) {
+              const styleGuide = await readFileContent(styleGuidePath);
+              if (styleGuide) {
+                styleGuideContent = styleGuide;
+                console.log(`📚 已读取前端开发规范文档: ${styleGuidePath}`);
+              }
+            }
+
+            // 5. 构建结构化 Prompt
+            const existingFilesStr = existingFilesContext.map(f => 
               '### ' + f.action + ': ' + f.path + '\n```\n' + f.content + '\n```'
             ).join('\n\n');
 
-            let newFilesList = newFilePaths.length > 0 ? newFilePaths.map(p => '- ' + p).join('\n') : '无';
+            const newFilesList = newFilePaths.length > 0 ? newFilePaths.map(p => '- ' + p).join('\n') : '无';
+            
+            // 5.5. 确定分支名（优先级：评论中的分支信息 > 当前issue分支）
+            let branchName = `zhangxiaohao/issue-${context.issue.number}`;
+            
+            // 优先级1：如果评论中指定了分支，使用评论中的分支
+            if (branchFromComment) {
+              branchName = branchFromComment;
+              console.log(`🔗 使用评论中指定的分支: ${branchName}`);
+            } else {
+              // 优先级2：使用当前issue的分支（默认）
+              console.log(`🔗 使用当前issue的分支: ${branchName}`);
+            }
+            
+            // 检查文件在当前分支是否存在
+            const fileExistsInBranch = async (path, branch) => {
+              try {
+                await github.rest.repos.getContent({ 
+                  ...context.repo, 
+                  path,
+                  ref: branch
+                });
+                return true;
+              } catch (e) {
+                return false;
+              }
+            };
+            
+            // 检查是否需要创建页面：从需求描述、前端规范和方案中提取页面路径（在确定分支后）
+            let requiredPagePath = null;
+            const pagePathPatterns = [
+              /frontend\/app\/\(main\)\/[\w\-\.\/]+page\.tsx/g,
+              /frontend\/app\/[\w\-\.\/]+page\.tsx/g,
+              /app\/\(main\)\/[\w\-\.\/]+page\.tsx/g,
+              /app\/[\w\-\.\/]+page\.tsx/g
+            ];
+            
+            // 从所有文本来源中查找页面路径
+            const allTextForPageCheck = (frontendSpec || '') + '\n' + (frontendPlan || '') + '\n' + contextBody + '\n' + newFilesList;
+            for (const pattern of pagePathPatterns) {
+              const matches = allTextForPageCheck.match(pattern);
+              if (matches && matches.length > 0) {
+                // 找到第一个页面路径
+                let foundPath = matches[0];
+                if (!foundPath.startsWith('frontend/')) {
+                  foundPath = 'frontend/' + foundPath;
+                }
+                // 检查页面是否在当前分支已存在（而不是 main 分支）
+                const pageExists = await fileExistsInBranch(foundPath, branchName);
+                if (!pageExists) {
+                  requiredPagePath = foundPath;
+                  console.log(`📄 检测到需要创建的页面: ${requiredPagePath} (在当前分支 ${branchName} 不存在)`);
+                  break;
+                } else {
+                  console.log(`📄 页面已存在: ${foundPath} (在当前分支 ${branchName})`);
+                }
+              }
+            }
+            
+            // 构建页面检查提示
+            let pageCheckNote = '';
+            if (requiredPagePath) {
+              pageCheckNote = '\n\n【⚠️ 重要：必须创建页面】\n' +
+                `检测到需求中提到了页面路径 ${requiredPagePath}，但该页面不存在。\n` +
+                `**你必须创建这个页面文件**，否则功能无法正常使用。\n` +
+                `请确保在输出中包含：\n` +
+                `### CREATE: ${requiredPagePath}\n` +
+                ````tsx\n` +
+                `(完整的页面代码)\n` +
+                ````\n`;
+            } else if (newFilesList.includes('page.tsx') || contextBody.includes('页面') || contextBody.includes('page') || frontendSpec.includes('页面') || frontendPlan.includes('页面')) {
+              // 如果提到了页面但没有找到具体路径，提醒 AI 检查
+              pageCheckNote = '\n\n【⚠️ 页面检查】\n' +
+                '需求中提到了页面相关的内容，请检查是否需要创建新的页面文件。\n' +
+                '如果需要创建页面，请使用正确的路径格式（如 frontend/app/(main)/video/page.tsx）。\n' +
+                '**如果前端规范或前端方案中提到了页面路径，必须严格按照规范创建页面**。\n';
+            }
+            
+            // 构建前端规范和方案提示（优先级最高）
+            let frontendSpecNote = '';
+            if (frontendSpec || frontendPlan) {
+              frontendSpecNote = '\n\n【🚨 前端规范和方案（最高优先级 - 必须严格遵守）】\n';
+              frontendSpecNote += '**⚠️ 重要：以下规范优先级高于所有其他规范，包括基础开发规范文档。如有冲突，必须优先遵循以下规范。**\n\n';
+              if (frontendSpec) {
+                // 检查是否来自父级 issue（通过检查 contextBody 中是否包含"来自父级 Issue"）
+                const isFromParent = contextBody.includes('前端规范（来自父级 Issue）');
+                const source = isFromParent ? '（来自父级 Issue 评论）' : '（来自当前 Issue 评论）';
+                frontendSpecNote += `**前端规范${source}**：\n` + frontendSpec + '\n\n';
+              }
+              if (frontendPlan) {
+                // 检查是否来自父级 issue
+                const isFromParent = contextBody.includes('前端方案（来自父级 Issue）');
+                const source = isFromParent ? '（来自父级 Issue 评论）' : '（来自当前 Issue 评论）';
+                frontendSpecNote += `**前端方案${source}**：\n` + frontendPlan + '\n\n';
+              }
+            }
             
             // 构建父级规范提示
             let parentSpecNote = '';
             if (parentSpec) {
-              parentSpecNote = '\n\n【⚠️ 父级规范 - 最高优先级】\n' +
-                '以下内容来自父级 Issue，**必须严格遵守**，特别是目录结构和文件路径：\n' +
-                '如果父级规范中明确指定了目录结构（如 app/(main)/video/page.tsx），\n' +
-                '**必须严格按照父级规范执行，不要使用默认的 app/[route]/page.tsx 格式**。\n' +
-                '父级规范优先级高于项目结构规范。\n';
+              parentSpecNote = '\n\n【⚠️ 父级 Issue 基本信息】\n' +
+                '以下内容来自父级 Issue，供参考：\n' +
+                parentSpec + '\n';
             }
             
-            // 初始化页面检查提示（稍后在确定分支后更新）
-            let pageCheckNote = '';
+            // 构建前端开发规范提示（基础规范，优先级低于评论/Issue 规范）
+            let styleGuideNote = '';
+            if (styleGuideContent) {
+              const priorityNote = (frontendSpec || frontendPlan) 
+                ? '\n**⚠️ 注意：这是基础开发规范。如果上面的"前端规范和方案"中有冲突的规范，优先遵循上面的规范。**\n'
+                : '\n**这是项目的基础前端开发规范，所有代码必须严格遵循。**\n';
+              
+              styleGuideNote = '\n\n【📚 前端开发规范（基础规范）】\n' +
+                priorityNote +
+                styleGuideContent + '\n\n' +
+                '**基础规范要点**：\n' +
+                '- 必须使用语义化的 Tailwind 颜色类（如 bg-background、text-foreground），禁止硬编码颜色值\n' +
+                '- 业务颜色必须使用 text-profit（盈利）或 text-loss（亏损）\n' +
+                '- 组件必须从 @/components/ui 导入 shadcn/ui 组件（New York 风格）\n' +
+                '- 所有函数和组件必须有完整的 TypeScript 类型定义\n' +
+                '- 使用 cn() 工具函数合并类名\n' +
+                '- 优先使用 Flexbox 和 Grid 布局，避免使用 position: relative 进行布局\n' +
+                '- 遵循目录结构规范\n\n';
+            }
             
             const prompt = '你是一名 Next.js 前端专家，负责根据需求精准修改或创建代码。\n\n' +
               '【项目结构规范（默认）】\n' +
@@ -427,7 +516,9 @@ jobs:
               '- Hooks: frontend/hooks/\n' +
               '- 工具函数: frontend/lib/utils/\n' +
               '- 类型定义: frontend/types/\n' +
+              frontendSpecNote +
               parentSpecNote +
+              styleGuideNote +
               pageCheckNote +
               '\n【当前目录结构】\n' +
               projectTree + '\n\n' +
@@ -457,9 +548,14 @@ jobs:
               '   - 如果父级规范未指定，页面放在 frontend/app/[route]/page.tsx\n' +
               '   - 组件必须放在 frontend/components/ 下（或父级规范指定的位置）\n' +
               '   - 检查是否有可复用的现有组件\n' +
-              '   - **优先使用【待创建文件路径】中列出的路径，这些路径来自父级规范和讨论**\n' +
-              '   - **如果需求中提到了页面功能，必须创建对应的页面文件**\n\n' +
-              '3. **禁止操作**：\n' +
+              '   - **优先使用【待创建文件路径】中列出的路径，这些路径来自父级规范和讨论**\n\n' +
+              '3. **CSS 布局规范**：\n' +
+              '   - **优先使用 Flexbox（flex）和 Grid（grid）布局**，而不是相对定位（relative positioning）\n' +
+              '   - 只有在 Flexbox 和 Grid 无法实现的情况下，才允许使用相对定位（position: relative）\n' +
+              '   - 避免使用 `position: relative` 进行布局，优先考虑 `display: flex`、`display: grid` 等现代布局方式\n' +
+              '   - 使用 Tailwind CSS 的布局类：`flex`、`grid`、`flex-col`、`flex-row`、`grid-cols-*`、`gap-*` 等\n' +
+              '   - 只有在需要绝对定位（absolute）的父容器时，才使用 `relative`\n\n' +
+              '4. **禁止操作**：\n' +
               '   - 禁止删除现有代码\n' +
               '   - 禁止重写已存在的文件（只能修改）\n' +
               '   - 禁止在 app/ 目录创建非页面组件\n' +
@@ -525,12 +621,6 @@ jobs:
               '```  <-- 禁止！代码块内不能有 Markdown';
 
             console.log("🤖 调用 AI...");
-            if (requiredPagePath) {
-              console.log(`📄 页面检查：需要创建页面 ${requiredPagePath}`);
-            }
-            if (existingFilesInBranch.length > 0) {
-              console.log(`📄 文件检查：${existingFilesInBranch.length} 个文件在当前分支已存在，必须使用 MODIFY`);
-            }
 
             const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -540,7 +630,7 @@ jobs:
               },
               body: JSON.stringify({
                 model: "anthropic/claude-sonnet-4.5",
-                messages: [{ role: "user", content: finalPrompt }]
+                messages: [{ role: "user", content: prompt }]
               })
             });
             
@@ -625,203 +715,7 @@ jobs:
               throw new Error("解析失败：AI 未生成任何有效文件块");
             }
 
-            // 7. 智能分支策略：先确定分支名（需要在验证文件之前确定）
-            let branchName;
-            let baseRef;
-            
-            if (parentIssueNumber) {
-              // 如果有父issue，使用父issue的分支名
-              branchName = `zhangxiaohao/issue-${parentIssueNumber}`;
-              console.log(`🔗 检测到父issue #${parentIssueNumber}，使用分支: ${branchName}`);
-              
-              // 尝试获取父issue的分支
-              try {
-                baseRef = await github.rest.git.getRef({ 
-                  ...context.repo, 
-                  ref: `heads/${branchName}` 
-                });
-                console.log(`✅ 父issue分支已存在，将在此基础上继续开发`);
-              } catch (e) {
-                // 父issue分支不存在，从main创建
-                console.log(`⚠️ 父issue分支不存在，从main创建新分支`);
-                baseRef = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
-                await github.rest.git.createRef({ 
-                  ...context.repo, 
-                  ref: `refs/heads/${branchName}`, 
-                  sha: baseRef.data.object.sha 
-                });
-              }
-            } else {
-              // 没有父issue，创建新分支
-              branchName = `zhangxiaohao/issue-${context.issue.number}`;
-              baseRef = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
-              
-              try { 
-                await github.rest.git.createRef({ 
-                  ...context.repo, 
-                  ref: `refs/heads/${branchName}`, 
-                  sha: baseRef.data.object.sha 
-                }); 
-              } catch (e) {
-                // 分支已存在，更新到最新 main
-                try {
-                  await github.rest.git.updateRef({
-                    ...context.repo,
-                    ref: `heads/${branchName}`,
-                    sha: baseRef.data.object.sha,
-                    force: true
-                  });
-                } catch (e2) {}
-              }
-            }
-            
-            // 检查文件在当前分支是否存在（而不是 main 分支）
-            const fileExistsInBranch = async (path, branch) => {
-              try {
-                await github.rest.repos.getContent({ 
-                  ...context.repo, 
-                  path,
-                  ref: branch
-                });
-                return true;
-              } catch (e) {
-                return false;
-              }
-            };
-            
-            // 读取文件在当前分支的内容
-            const readFileContentFromBranch = async (path, branch) => {
-              try {
-                const { data } = await github.rest.repos.getContent({ 
-                  ...context.repo, 
-                  path,
-                  ref: branch
-                });
-                if (data.size < 80000 && data.content) {
-                  return Buffer.from(data.content, 'base64').toString();
-                }
-              } catch (e) {}
-              return null;
-            };
-            
-            // 6.5. 重新检查文件在当前分支的存在性，并更新文件列表
-            console.log(`🔍 重新检查文件在当前分支 ${branchName} 的存在性...`);
-            const existingFilesInBranch = [];
-            const newFilesInBranch = [];
-            
-            // 检查所有已识别的文件路径
-            for (const path of foundPaths) {
-              const existsInBranch = await fileExistsInBranch(path, branchName);
-              if (existsInBranch) {
-                const content = await readFileContentFromBranch(path, branchName);
-                if (content) {
-                  existingFilesInBranch.push({ path, content, action: 'MODIFY' });
-                  console.log(`📄 [分支存在] ${path}`);
-                }
-              } else {
-                newFilesInBranch.push(path);
-                console.log(`🆕 [分支新建] ${path}`);
-              }
-            }
-            
-            // 更新 existingFilesStr 和 newFilesList（使用当前分支的信息）
-            // 优先使用当前分支的文件内容，main 分支的文件作为参考
-            const updatedExistingFiles = [];
-            for (const file of existingFilesInBranch) {
-              updatedExistingFiles.push(file);
-            }
-            // 添加 main 分支存在但当前分支不存在的文件（作为参考）
-            for (const file of existingFilesContext) {
-              const existsInBranch = await fileExistsInBranch(file.path, branchName);
-              if (!existsInBranch && !updatedExistingFiles.find(f => f.path === file.path)) {
-                updatedExistingFiles.push({ ...file, action: 'REFERENCE' });
-                console.log(`📄 [参考] ${file.path} (main 分支存在，当前分支不存在)`);
-              }
-            }
-            
-            // 更新文件列表
-            existingFilesStr = updatedExistingFiles.map(f => 
-              '### ' + f.action + ': ' + f.path + '\n```\n' + f.content + '\n```'
-            ).join('\n\n');
-            
-            newFilesList = newFilesInBranch.length > 0 ? newFilesInBranch.map(p => '- ' + p).join('\n') : '无';
-            
-            // 构建文件存在性说明
-            let fileExistenceNote = '';
-            if (existingFilesInBranch.length > 0) {
-              fileExistenceNote = '\n\n【⚠️ 重要：文件存在性检查】\n' +
-                '以下文件在当前分支已存在，**必须使用 MODIFY 操作，不能使用 CREATE**：\n' +
-                existingFilesInBranch.map(f => `- ${f.path}`).join('\n') + '\n' +
-                '如果需求中提到了这些文件，你必须在现有文件基础上修改，而不是创建新文件。\n' +
-                '**特别注意页面文件**：如果页面已存在，必须修改现有页面，不能创建新页面。\n';
-            }
-            
-            // 6.6. 检查是否需要创建页面：从需求描述和父级规范中提取页面路径（在确定分支后）
-            let requiredPagePath = null;
-            const pagePathPatterns = [
-              /frontend\/app\/\(main\)\/[\w\-\.\/]+page\.tsx/g,
-              /frontend\/app\/[\w\-\.\/]+page\.tsx/g,
-              /app\/\(main\)\/[\w\-\.\/]+page\.tsx/g,
-              /app\/[\w\-\.\/]+page\.tsx/g
-            ];
-            
-            // 从父级规范和需求描述中查找页面路径
-            const allTextForPageCheck = (parentSpec || '') + '\n' + contextBody + '\n' + newFilesList;
-            for (const pattern of pagePathPatterns) {
-              const matches = allTextForPageCheck.match(pattern);
-              if (matches && matches.length > 0) {
-                // 找到第一个页面路径
-                let foundPath = matches[0];
-                if (!foundPath.startsWith('frontend/')) {
-                  foundPath = 'frontend/' + foundPath;
-                }
-                // 检查页面是否在当前分支已存在
-                const pageExists = await fileExistsInBranch(foundPath, branchName);
-                if (!pageExists) {
-                  requiredPagePath = foundPath;
-                  console.log(`📄 检测到需要创建的页面: ${requiredPagePath}`);
-                  break;
-                }
-              }
-            }
-            
-            // 更新页面检查提示
-            if (requiredPagePath) {
-              pageCheckNote = '\n\n【⚠️ 重要：必须创建页面】\n' +
-                `检测到需求中提到了页面路径 ${requiredPagePath}，但该页面在当前分支不存在。\n` +
-                `**你必须创建这个页面文件**，否则功能无法正常使用。\n` +
-                `请确保在输出中包含：\n` +
-                `### CREATE: ${requiredPagePath}\n` +
-                ````tsx\n` +
-                `(完整的页面代码)\n` +
-                ````\n`;
-            } else if (newFilesList.includes('page.tsx') || contextBody.includes('页面') || contextBody.includes('page')) {
-              // 检查是否有页面在当前分支已存在
-              const existingPages = existingFilesInBranch.filter(f => f.path.includes('/page.tsx'));
-              if (existingPages.length > 0) {
-                pageCheckNote = '\n\n【⚠️ 页面检查】\n' +
-                  '需求中提到了页面相关的内容。\n' +
-                  `**以下页面在当前分支已存在，必须使用 MODIFY 操作**：\n` +
-                  existingPages.map(f => `- ${f.path}`).join('\n') + '\n' +
-                  '如果需求是要修改现有页面，请使用 MODIFY 操作。\n' +
-                  '如果需求是要创建新页面，请使用正确的路径格式（如 frontend/app/(main)/video/page.tsx）。\n';
-              } else {
-                // 如果提到了页面但没有找到具体路径，提醒 AI 检查
-                pageCheckNote = '\n\n【⚠️ 页面检查】\n' +
-                  '需求中提到了页面相关的内容，请检查是否需要创建新的页面文件。\n' +
-                  '如果需要创建页面，请使用正确的路径格式（如 frontend/app/(main)/video/page.tsx）。\n' +
-                  '**如果父级规范中提到了页面路径，必须严格按照父级规范创建页面**。\n';
-              }
-            }
-            
-            // 更新 prompt（使用当前分支的文件信息）
-            const finalPrompt = prompt
-              .replace(existingFilesStr, existingFilesStr) // 替换为更新后的文件列表
-              .replace(newFilesList, newFilesList) // 替换为更新后的新建文件列表
-              .replace(pageCheckNote, pageCheckNote) // 替换为更新后的页面检查提示
-              .replace('【操作规则】', fileExistenceNote + '\n【操作规则】'); // 在操作规则前插入文件存在性说明
-            
-            // 7. 验证和过滤文件（使用当前分支检查文件是否存在）
+            // 7. 验证和过滤文件
             const validFiles = [];
             const warnings = [];
             
@@ -845,7 +739,7 @@ jobs:
                 }
               }
               
-              // 检查 CREATE 操作的文件是否在当前分支已存在（关键修复）
+              // 检查 CREATE 操作的文件是否在当前分支已存在（而不是 main 分支）
               if (file.action === 'CREATE') {
                 const exists = await fileExistsInBranch(file.path, branchName);
                 if (exists) {
@@ -869,242 +763,62 @@ jobs:
               validFiles.push(file);
             }
 
+            // 8. 创建或获取分支并写入文件（分支名已在第5.5步确定）
+            const baseRef = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
+            
+            // 检查分支是否已存在
+            let branchExists = false;
+            try {
+              await github.rest.git.getRef({ ...context.repo, ref: `heads/${branchName}` });
+              branchExists = true;
+              console.log(`✅ 分支已存在: ${branchName}`);
+            } catch (e) {
+              // 分支不存在，创建新分支
+              try {
+                await github.rest.git.createRef({ 
+                  ...context.repo, 
+                  ref: `refs/heads/${branchName}`, 
+                  sha: baseRef.data.object.sha 
+                });
+                console.log(`✅ 创建新分支: ${branchName}`);
+              } catch (e2) {
+                console.log(`⚠️ 创建分支失败: ${e2.message}`);
+              }
+            }
+
             const createdFiles = [];
             const modifiedFiles = [];
             
-            // 9. 准备实施方案文档（在批量提交之前生成）
-            // 提取约束信息用于文档
-            let constraintsSummary = '';
-            if (parentSpec) {
-              // 检查是否有约束部分
-              const constraintMatch = parentSpec.match(/--- \[父级 Issue 前端约束[^\]]*\] ---([\s\S]*?)(?=\n---|$)/);
-              if (constraintMatch) {
-                constraintsSummary = constraintMatch[1].trim();
-                // 限制长度，避免文档过长
-                if (constraintsSummary.length > 2000) {
-                  constraintsSummary = constraintsSummary.substring(0, 2000) + '\n\n... (内容已截断，完整内容请查看父级 Issue)';
-                }
+            for (const file of validFiles) {
+              console.log(`📝 ${file.action}: ${file.path}`);
+              
+              let sha;
+              try {
+                const { data } = await github.rest.repos.getContent({ 
+                  ...context.repo, 
+                  path: file.path, 
+                  ref: branchName 
+                });
+                sha = data.sha;
+              } catch (e) {} 
+              
+              await github.rest.repos.createOrUpdateFileContents({
+                ...context.repo,
+                path: file.path,
+                message: `${file.action === 'CREATE' ? 'feat' : 'refactor'}(fe): ${file.action.toLowerCase()} ${file.path.split('/').pop()}`,
+                content: Buffer.from(file.content).toString('base64'),
+                branch: branchName,
+                sha: sha
+              });
+              
+              if (file.action === 'CREATE') {
+                createdFiles.push(file.path);
+              } else {
+                modifiedFiles.push(file.path);
               }
-            }
-            
-            // 构建实施方案文档（避免嵌套反引号导致 YAML 解析错误）
-            const branchInfo = parentIssueNumber 
-              ? '**父Issue**: #' + parentIssueNumber + '\n**分支**: `' + branchName + '`' 
-              : '**分支**: `' + branchName + '`';
-            
-            const createdFilesList = createdFiles.length > 0 
-              ? '**新建文件 (' + createdFiles.length + '):**\n' + createdFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
-              : '';
-            
-            const modifiedFilesList = modifiedFiles.length > 0 
-              ? '**修改文件 (' + modifiedFiles.length + '):**\n' + modifiedFiles.map(f => '- `' + f + '`').join('\n') + '\n' 
-              : '';
-            
-            const constraintsSection = constraintsSummary 
-              ? `**前端约束（来自父级 Issue 评论，按时间顺序，后面的优先级更高）**:\n\n${constraintsSummary}\n\n` 
-              : '';
-            
-            const parentSpecSection = parentSpec && !constraintsSummary 
-              ? `**父级规范（优先级最高）**:\n\n${parentSpec.split('\n').slice(0, 100).join('\n')}${parentSpec.split('\n').length > 100 ? '\n\n...' : ''}\n` 
-              : '';
-            
-            const constraintsNote = constraintsSummary 
-              ? `\n**⚠️ 约束优先级说明**:\n- 前端约束来自父级 Issue 的多个评论\n- 按时间顺序处理，后面的约束会覆盖或补充前面的约束\n- 如果约束之间有冲突，以最新的约束为准\n` 
-              : '';
-            
-            const warningsList = warnings.length > 0 
-              ? warnings.map(w => `- ${w}`).join('\n') 
-              : '无警告';
-            
-            const parentIssueNote = parentIssueNumber 
-              ? `此 Issue 基于父 Issue #${parentIssueNumber}，使用同一分支开发` 
-              : '此 Issue 创建了新分支';
-            
-            const constraintsNote2 = constraintsSummary 
-              ? `前端约束可能来自父级 Issue 的多个评论，请仔细阅读所有约束` 
-              : '';
-            
-            // 10. 生成实施方案文档：如果有父 issue 且有前端实施方案，使用父 issue 的方案；否则使用当前 issue 的方案
-            let implementationPlanDoc = null;
-            let docPath = null;
-            
-            if (parentIssueNumber && parentImplementationPlan) {
-              // 使用父 issue 的前端实施方案
-              console.log(`📋 使用父 Issue #${parentIssueNumber} 的前端实施方案`);
-              
-              // 提取实施方案内容（去除标记，只保留实际内容）
-              let planContent = parentImplementationPlan.body;
-              const planMatch = planContent.match(/(?:🏗️\s*前端实施方案|🏗️\s*前端实施计划|前端实施方案|frontend implementation plan|frontend implementation)[\s:：]*\n?([\s\S]*)/i);
-              if (planMatch && planMatch[1]) {
-                planContent = planMatch[1].trim();
-              }
-              
-              docPath = `frontend/lib/doc/implementation-plan-issue-${parentIssueNumber}.md`;
-              
-              implementationPlanDoc = '# Issue #' + parentIssueNumber + ' 前端实施方案\n\n' +
-                '## 📋 方案信息\n\n' +
-                '**父Issue**: #' + parentIssueNumber + '\n' +
-                '**分支**: `' + branchName + '`\n' +
-                '**来源**: ' + parentImplementationPlan.url + '\n' +
-                '**创建者**: ' + parentImplementationPlan.user + '\n' +
-                '**创建时间**: ' + new Date(parentImplementationPlan.createdAt).toISOString() + '\n\n' +
-                '---\n\n' +
-                planContent + '\n\n' +
-                '---\n\n' +
-                '## 📌 注意事项\n\n' +
-                '1. 此文档来自父 Issue #' + parentIssueNumber + ' 的前端实施方案\n' +
-                '2. 同一分支下的所有子 Issues 都基于此方案开发\n' +
-                '3. 此文档由 Agent Builder 自动生成并更新\n';
-            } else {
-              // 没有父 issue 或没有前端实施方案，使用当前 issue 的方案
-              console.log(`📋 使用当前 Issue #${context.issue.number} 的实施方案`);
-              
-              docPath = `frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md`;
-              
-              implementationPlanDoc = '# Issue #' + context.issue.number + ' 前端实施方案\n\n' +
-                '## 📋 需求信息\n\n' +
-                '**标题**: ' + process.env.ISSUE_TITLE + '\n\n' +
-                '**Issue**: #' + context.issue.number + '\n\n' +
-                branchInfo + '\n\n' +
-                '**创建时间**: ' + new Date().toISOString() + '\n\n' +
-                '---\n\n' +
-                '## 📝 需求描述\n\n' +
-                contextBody.split('\n').slice(0, 50).join('\n') + (contextBody.split('\n').length > 50 ? '\n\n...' : '') + '\n\n' +
-                '---\n\n' +
-                '## 🎯 实施方案\n\n' +
-                '### 文件变更清单\n\n' +
-                createdFilesList + '\n' +
-                modifiedFilesList + '\n' +
-                '### 项目结构约束\n\n' +
-                constraintsSection +
-                parentSpecSection +
-                '**默认项目结构规范**:\n' +
-                '- 页面文件: `frontend/app/[route]/page.tsx`\n' +
-                '- 布局文件: `frontend/app/[route]/layout.tsx`\n' +
-                '- 通用组件: `frontend/components/ui/`\n' +
-                '- 业务组件: `frontend/components/features/`\n' +
-                '- Hooks: `frontend/hooks/`\n' +
-                '- 工具函数: `frontend/lib/utils/`\n' +
-                '- 类型定义: `frontend/types/`\n\n' +
-                constraintsNote + '\n' +
-                '---\n\n' +
-                '## ⚠️ 警告\n\n' +
-                warningsList + '\n\n' +
-                '---\n\n' +
-                '## 📌 注意事项\n\n' +
-                '1. 此文档由 Agent Builder 自动生成\n' +
-                '2. 请验证代码变更后再合并 PR\n' +
-                '3. ' + parentIssueNote + '\n' +
-                (constraintsNote2 ? '4. ' + constraintsNote2 + '\n' : '');
             }
 
-            // 11. 批量提交：使用 Git Tree API 将所有文件变更（代码文件 + 实施方案文档）合并到一个提交中
-            // 这样可以保留父分支的所有已有文件，只更新/添加新文件
-            const allFilesToCommit = [...validFiles];
-            
-            // 如果有实施方案文档，也加入到批量提交中
-            if (implementationPlanDoc && docPath) {
-              allFilesToCommit.push({
-                path: docPath,
-                content: implementationPlanDoc,
-                action: 'CREATE' // 文档总是创建或更新
-              });
-            }
-            
-            if (allFilesToCommit.length > 0) {
-              console.log(`📦 准备批量提交 ${allFilesToCommit.length} 个文件（包含实施方案文档）...`);
-              
-              // 1. 获取当前分支的最新 commit SHA
-              const currentRef = await github.rest.git.getRef({
-                ...context.repo,
-                ref: `heads/${branchName}`
-              });
-              const baseCommitSha = currentRef.data.object.sha;
-              
-              // 2. 获取基础 tree（这会保留所有已存在的文件）
-              const baseCommit = await github.rest.git.getCommit({
-                ...context.repo,
-                commit_sha: baseCommitSha
-              });
-              const baseTreeSha = baseCommit.data.tree.sha;
-              
-              console.log(`📋 基础 commit: ${baseCommitSha.substring(0, 7)}, tree: ${baseTreeSha.substring(0, 7)}`);
-              
-              // 3. 构建文件树：为所有要提交的文件创建 blob
-              const treeItems = [];
-              
-              for (const file of allFilesToCommit) {
-                if (file.path === docPath) {
-                  console.log(`📄 实施方案文档: ${file.path}`);
-                } else {
-                  console.log(`📝 ${file.action}: ${file.path}`);
-                }
-                
-                // 创建 blob
-                const blob = await github.rest.git.createBlob({
-                  ...context.repo,
-                  content: Buffer.from(file.content).toString('base64'),
-                  encoding: 'base64'
-                });
-                
-                // 添加到 tree（只包含要更新/添加的文件）
-                treeItems.push({
-                  path: file.path,
-                  mode: '100644', // 普通文件
-                  type: 'blob',
-                  sha: blob.data.sha
-                });
-                
-                // 记录文件变更（不包括文档）
-                if (file.path !== docPath) {
-                  if (file.action === 'CREATE') {
-                    createdFiles.push(file.path);
-                  } else {
-                    modifiedFiles.push(file.path);
-                  }
-                }
-              }
-              
-              // 4. 创建新的 tree（使用 base_tree 保留所有已存在的文件，只更新 treeItems 中的文件）
-              const newTree = await github.rest.git.createTree({
-                ...context.repo,
-                base_tree: baseTreeSha, // 关键：使用 base_tree 保留所有已存在的文件
-                tree: treeItems // 只更新/添加这些文件
-              });
-              
-              console.log(`🌳 新 tree 已创建: ${newTree.data.sha.substring(0, 7)}`);
-              
-              // 5. 创建 commit（一个子 issue 一个提交）
-              const commitMessage = `feat(fe): implement issue #${context.issue.number}${parentIssueNumber ? ` (parent: #${parentIssueNumber})` : ''}\n\n` +
-                (createdFiles.length > 0 ? `新建: ${createdFiles.length} 个文件\n` : '') +
-                (modifiedFiles.length > 0 ? `修改: ${modifiedFiles.length} 个文件\n` : '') +
-                (docPath ? `实施方案文档: ${docPath}` : '');
-              
-              const newCommit = await github.rest.git.createCommit({
-                ...context.repo,
-                message: commitMessage,
-                tree: newTree.data.sha,
-                parents: [baseCommitSha] // 关键：使用当前分支的 commit 作为父节点，保留历史
-              });
-              
-              console.log(`📝 新 commit 已创建: ${newCommit.data.sha.substring(0, 7)}`);
-              
-              // 6. 更新分支引用（这会保留所有历史提交）
-              await github.rest.git.updateRef({
-                ...context.repo,
-                ref: `heads/${branchName}`,
-                sha: newCommit.data.sha
-              });
-              
-              console.log(`✅ 批量提交完成: ${commitMessage}`);
-              if (docPath) {
-                console.log(`📄 实施方案文档已包含在提交中: ${docPath}`);
-              }
-            } else {
-              console.log(`⚠️ 没有文件需要提交`);
-            }
-
-            // 10. 创建或更新 PR（默认创建 Draft PR，需要验证）
+            // 9. 创建 PR
             let prBody = '### 📦 变更清单\n\n';
             if (createdFiles.length > 0) {
               prBody += '**新建文件：**\n' + createdFiles.map(f => '- `' + f + '`').join('\n') + '\n';
@@ -1115,67 +829,26 @@ jobs:
             if (warnings.length > 0) {
               prBody += '\n### ⚠️ 警告\n' + warnings.map(w => '- ' + w).join('\n');
             }
-            prBody += `\n\n### 📄 实施方案文档\n\n实施方案已保存到: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n`;
-            prBody += '\n\n---\n';
-            prBody += `指令: \`/code-zhangxiaohao-agent\`\n`;
-            prBody += `Issue: #${context.issue.number}\n`;
-            if (parentIssueNumber) {
-              prBody += `父Issue: #${parentIssueNumber}\n`;
-            }
-            prBody += `\n**⚠️ 此 PR 为 Draft 状态，请验证代码后再 Ready for Review**`;
+            prBody += '\n\n---\n指令: `/code-zhangxiaohao-agent`\nIssue: #' + context.issue.number;
 
-            // 检查是否已存在 PR
-            let existingPR = null;
             try {
-              const prs = await github.rest.pulls.list({
+              const pr = await github.rest.pulls.create({
                 ...context.repo,
-                head: `${context.repo.owner}:${branchName}`,
+                title: `[FE] ${process.env.ISSUE_TITLE}`,
+                head: branchName,
                 base: 'main',
-                state: 'all'
+                body: prBody
               });
-              if (prs.data.length > 0) {
-                existingPR = prs.data[0];
-              }
-            } catch (e) {}
-
-            try {
-              let pr;
-              if (existingPR) {
-                // 更新现有 PR
-                pr = await github.rest.pulls.update({
-                  ...context.repo,
-                  pull_number: existingPR.number,
-                  title: `[FE] ${process.env.ISSUE_TITLE}${parentIssueNumber ? ` (基于 #${parentIssueNumber})` : ''}`,
-                  body: prBody,
-                  state: 'open' // 确保 PR 是打开状态
-                });
-                
-                await github.rest.issues.createComment({
-                  ...context.repo,
-                  issue_number: context.issue.number,
-                  body: `✅ PR 已更新: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\``
-                });
-              } else {
-                // 创建新的 Draft PR
-                pr = await github.rest.pulls.create({
-                  ...context.repo,
-                  title: `[FE] ${process.env.ISSUE_TITLE}${parentIssueNumber ? ` (基于 #${parentIssueNumber})` : ''}`,
-                  head: branchName,
-                  base: 'main',
-                  body: prBody,
-                  draft: true // 默认创建 Draft PR
-                });
-                
-                await github.rest.issues.createComment({
-                  ...context.repo,
-                  issue_number: context.issue.number,
-                  body: `✅ Draft PR 已创建: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n\n**请验证代码后，将 PR 标记为 Ready for Review**`
-                });
-              }
+              
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body: `PR: ${pr.data.html_url}\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}${warnings.length > 0 ? `\n\n⚠️ ${warnings.length} 个警告，详见 PR` : ''}`
+              });
             } catch(e) {
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: context.issue.number,
-                body: `分支已更新: \`${branchName}\`\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}\n\n📄 实施方案文档: \`frontend/lib/doc/implementation-plan-issue-${context.issue.number}.md\`\n\n⚠️ PR 创建失败: ${e.message}`
+                body: `分支已更新: \`${branchName}\`\n\n新建: ${createdFiles.length} | 修改: ${modifiedFiles.length}`
               });
             }
