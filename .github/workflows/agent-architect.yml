@@ -1,0 +1,129 @@
+name: Agent Architect (Plan FE)
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  architect:
+    # 触发指令：/plan-fe
+    if: contains(github.event.comment.body, '/plan-fe')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate File Tree
+        id: file_tree
+        run: |
+          # 生成项目目录结构 (排除干扰项)
+          # maxdepth 5 控制深度，防止 Token 溢出
+          TREE=$(find . -maxdepth 5 -not -path '*/.*' -not -path '*/node_modules*' -not -path '*/dist*' -not -path '*/build*' -not -path '*/.next*' | sed 's|./||' | sort)
+          
+          # 将结果写入环境变量 (处理多行字符串)
+          echo "TREE<<EOF" >> $GITHUB_ENV
+          echo "$TREE" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Analyze Structure & Plan
+        uses: actions/github-script@v7
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PROJECT_TREE: ${{ env.TREE }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        with:
+          script: |
+            const issueBody = process.env.ISSUE_BODY;
+            const tree = process.env.PROJECT_TREE;
+            const commentBody = process.env.COMMENT_BODY;
+            
+            console.log("🚀 架构师开始分析...");
+
+            // 1. 自动寻找并读取父级 Issue
+            const parentRegex = /(?:Parent|Ref|父任务|父级|父需求|关联父需求)[\s:：]+#(\d+)/i;
+            const parentMatch = issueBody.match(parentRegex);
+            let fullContext = issueBody;
+
+            if (parentMatch) {
+              const parentId = parentMatch[1];
+              console.log(`🔗 发现关联父需求: #${parentId}`);
+              try {
+                const parentIssue = await github.rest.issues.get({
+                  ...context.repo,
+                  issue_number: parentId
+                });
+                fullContext += `\n\n--- [系统追加：父级架构规范 (Issue #${parentId})] ---\n${parentIssue.data.body}`;
+              } catch (e) {
+                console.log(`⚠️ 读取父级需求失败: ${e.message}`);
+              }
+            }
+
+            // 2. 构建 Prompt
+            const prompt = `你是一名资深前端架构师 (Next.js 专家)。
+            
+            【任务目标】
+            分析用户需求，基于当前项目结构，规划文件路径和目录结构。
+            **注意：不要写具体的代码实现，只输出设计方案和文件列表。**
+
+            【当前项目目录结构】
+            ${tree}
+
+            【需求描述 (含父级规范)】
+            ${fullContext}
+            
+            【补充指令】
+            ${commentBody}
+
+            【你的工作】
+            请告诉工程师应该创建或修改哪些文件。
+            1. **路径检查**：严格遵守 Next.js App Router (app/page.tsx) 规范。
+            2. **复用检查**：如果目录中已有 \`components/ui/button.tsx\` 或 \`utils/request.ts\`，请明确指出应复用它，不要重复造轮子。
+            3. **架构合理性**：将 UI 组件、页面逻辑、工具函数分开放置。
+
+            【输出格式】
+            请直接回复一个 Markdown 列表，格式如下：
+            
+            ## 🏗️ 前端实施方案
+            建议创建/修改以下文件：
+            - \`frontend/app/xxx/page.tsx\`: (说明用途)
+            - \`frontend/components/xxx.tsx\`: (说明组件逻辑)
+            
+            ### 设计思路：
+            (简述为什么这么分配目录，以及需要复用哪些现有文件)`;
+
+            console.log("🤖 正在调用 OpenRouter AI...");
+
+            // 3. 调用 AI
+            const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: "anthropic/claude-3.5-sonnet",
+                messages: [{ role: "user", content: prompt }]
+              })
+            });
+
+            if (!aiRes.ok) {
+                const errText = await aiRes.text();
+                throw new Error(`OpenRouter Error: ${aiRes.status} - ${errText}`);
+            }
+            
+            const aiData = await aiRes.json();
+            const plan = aiData.choices[0].message.content;
+
+            // 4. 回复评论
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: plan
+            });
+            console.log("✅ 方案已发布到评论区");
