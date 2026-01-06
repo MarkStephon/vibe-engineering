@@ -258,6 +258,14 @@ jobs:
             // 合并所有文本来源（用于文件路径识别）
             const fullDiscussionText = comments.data.map(c => c.body).join('\n') + '\n' + process.env.ISSUE_BODY;
             let contextBody = process.env.ISSUE_BODY;
+            
+            // 添加触发评论的完整内容（让 LLM 自己分析）
+            if (triggerComment) {
+              contextBody += '\n\n--- [触发评论] ---\n';
+              contextBody += '以下是触发命令的评论内容，请根据内容判断其用途（可能包含需求、规范、方案或其他信息）：\n\n';
+              contextBody += triggerComment.body + '\n';
+            }
+            
             if (frontendSpec) {
               contextBody += '\n\n--- [前端规范] ---\n' + frontendSpec;
             }
