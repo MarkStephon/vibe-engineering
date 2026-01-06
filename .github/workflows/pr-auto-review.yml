@@ -3,7 +3,11 @@ name: PR Auto Review with Claude
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    if: contains(github.event.pull_request.labels.*.name, 'auto-review')  # 只对打 auto-review 标签的 PR 触发
+    branches:
+      - claude-code/auto-coding/**
+
+# ← 这里是关键！if 必须和 on: 对齐（2 个空格或 0 个空格，通常和 name/on/jobs 同级）
+if: contains(github.event.pull_request.labels.*.name, 'auto-review')
 
 jobs:
   review:
