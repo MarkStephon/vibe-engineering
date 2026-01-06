@@ -52,20 +52,28 @@ jobs:
               protectedFiles: ['frontend/app/layout.tsx', 'frontend/app/globals.css', 'frontend/package.json']
             };
 
-            // 检查文件是否存在
-            const fileExists = async (path) => {
+            // 检查文件是否存在（支持指定分支）
+            const fileExists = async (path, branch = null) => {
               try {
-                await github.rest.repos.getContent({ ...context.repo, path });
+                const params = { ...context.repo, path };
+                if (branch) {
+                  params.ref = branch;
+                }
+                await github.rest.repos.getContent(params);
                 return true;
               } catch (e) {
                 return false;
               }
             };
 
-            // 读取文件内容
-            const readFileContent = async (path) => {
+            // 读取文件内容（支持指定分支）
+            const readFileContent = async (path, branch = null) => {
               try {
-                const { data } = await github.rest.repos.getContent({ ...context.repo, path });
+                const params = { ...context.repo, path };
+                if (branch) {
+                  params.ref = branch;
+                }
+                const { data } = await github.rest.repos.getContent(params);
                 if (data.size < 80000 && data.content) {
                   return Buffer.from(data.content, 'base64').toString();
                 }
@@ -381,17 +389,49 @@ jobs:
             
             console.log(`📋 从父级规范和讨论中识别到 ${foundPaths.size} 个文件路径`);
             
-            // 收集现有文件和新文件
+            // 5.5. 确定分支名（优先级：评论中的分支信息 > 当前issue分支）
+            // 需要先确定分支，才能从正确的分支读取文件内容
+            let branchName = `zhangxiaohao/issue-${context.issue.number}`;
+            
+            // 优先级1：如果评论中指定了分支，使用评论中的分支
+            if (branchFromComment) {
+              branchName = branchFromComment;
+              console.log(`🔗 使用评论中指定的分支: ${branchName}`);
+            } else {
+              // 优先级2：使用当前issue的分支（默认）
+              console.log(`🔗 使用当前issue的分支: ${branchName}`);
+            }
+            
+            // 检查文件在当前分支是否存在
+            const fileExistsInBranch = async (path, branch) => {
+              try {
+                await github.rest.repos.getContent({ 
+                  ...context.repo, 
+                  path,
+                  ref: branch
+                });
+                return true;
+              } catch (e) {
+                return false;
+              }
+            };
+            
+            // 4. 从当前分支读取文件内容
             const existingFilesContext = [];
             const newFilePaths = [];
             
             for (const path of foundPaths) {
-              const exists = await fileExists(path);
-              if (exists) {
-                const content = await readFileContent(path);
+              // 先检查文件在当前分支是否存在
+              const existsInBranch = await fileExistsInBranch(path, branchName);
+              // 如果当前分支不存在，检查 main 分支是否存在（用于新建文件的情况）
+              const existsInMain = existsInBranch ? false : await fileExists(path);
+              
+              if (existsInBranch || existsInMain) {
+                // 优先从当前分支读取，如果当前分支不存在则从 main 分支读取
+                const content = await readFileContent(path, existsInBranch ? branchName : null);
                 if (content) {
-                  existingFilesContext.push({ path, content, action: 'MODIFY' });
-                  console.log(`📄 [存在] ${path}`);
+                  existingFilesContext.push({ path, content, action: existsInBranch ? 'MODIFY' : 'REFERENCE' });
+                  console.log(`📄 [存在${existsInBranch ? '于当前分支' : '于main分支'}] ${path}`);
                   
                   // 自动发现关联文件（import 语句）
                   const importRegex = /from\s+['"](@\/|\.\.\/|\.\/)([^'"]+)['"]/g;
@@ -405,9 +445,10 @@ jobs:
                       importPath = 'frontend/' + importPath;
                     }
                     if (!foundPaths.has(importPath)) {
-                      const importExists = await fileExists(importPath);
-                      if (importExists) {
-                        const importContent = await readFileContent(importPath);
+                      const importExistsInBranch = await fileExistsInBranch(importPath, branchName);
+                      const importExistsInMain = importExistsInBranch ? false : await fileExists(importPath);
+                      if (importExistsInBranch || importExistsInMain) {
+                        const importContent = await readFileContent(importPath, importExistsInBranch ? branchName : null);
                         if (importContent) {
                           existingFilesContext.push({ path: importPath, content: importContent, action: 'REFERENCE' });
                           console.log(`📄 [关联] ${importPath}`);
@@ -422,22 +463,34 @@ jobs:
               }
             }
 
-            // 4. 读取关键上下文文件
+            // 读取关键上下文文件（从当前分支）
             const criticalFiles = ['frontend/app/layout.tsx', 'frontend/app/globals.css'];
             for (const path of criticalFiles) {
               if (!existingFilesContext.find(f => f.path === path)) {
-                const content = await readFileContent(path);
-                if (content) {
+                const content = await readFileContent(path, branchName);
+                if (!content) {
+                  // 如果当前分支没有，尝试从 main 分支读取
+                  const mainContent = await readFileContent(path);
+                  if (mainContent) {
+                    existingFilesContext.push({ path, content: mainContent, action: 'REFERENCE' });
+                  }
+                } else {
                   existingFilesContext.push({ path, content, action: 'REFERENCE' });
                 }
               }
             }
 
-            // 读取 package.json
+            // 读取 package.json（从当前分支）
             let packageJsonContent = "{}";
-            const pkgPath = await fileExists('frontend/package.json') ? 'frontend/package.json' : 'package.json';
-            const pkgContent = await readFileContent(pkgPath);
-            if (pkgContent) packageJsonContent = pkgContent;
+            const pkgPath = await fileExists('frontend/package.json', branchName) ? 'frontend/package.json' : 'package.json';
+            const pkgContent = await readFileContent(pkgPath, branchName);
+            if (pkgContent) {
+              packageJsonContent = pkgContent;
+            } else {
+              // 如果当前分支没有，尝试从 main 分支读取
+              const mainPkgContent = await readFileContent(pkgPath);
+              if (mainPkgContent) packageJsonContent = mainPkgContent;
+            }
 
             // 读取前端开发规范文档
             let styleGuideContent = '';
@@ -471,33 +524,7 @@ jobs:
 
             const newFilesList = newFilePaths.length > 0 ? newFilePaths.map(p => '- ' + p).join('\n') : '无';
             
-            // 5.5. 确定分支名（优先级：评论中的分支信息 > 当前issue分支）
-            let branchName = `zhangxiaohao/issue-${context.issue.number}`;
-            
-            // 优先级1：如果评论中指定了分支，使用评论中的分支
-            if (branchFromComment) {
-              branchName = branchFromComment;
-              console.log(`🔗 使用评论中指定的分支: ${branchName}`);
-            } else {
-              // 优先级2：使用当前issue的分支（默认）
-              console.log(`🔗 使用当前issue的分支: ${branchName}`);
-            }
-            
-            // 检查文件在当前分支是否存在
-            const fileExistsInBranch = async (path, branch) => {
-              try {
-                await github.rest.repos.getContent({ 
-                  ...context.repo, 
-                  path,
-                  ref: branch
-                });
-                return true;
-              } catch (e) {
-                return false;
-              }
-            };
-            
-            // 检查是否需要创建页面：从需求描述、前端规范和方案中提取页面路径（在确定分支后）
+            // 5. 检查是否需要创建页面：从需求描述、前端规范和方案中提取页面路径（在确定分支后）
             let requiredPagePath = null;
             const pagePathPatterns = [
               /frontend\/app\/\(main\)\/[\w\-\.\/]+page\.tsx/g,
@@ -651,7 +678,6 @@ jobs:
             // 6. 解析 AI 输出
             console.log("📦 解析文件...");
             console.log("📄 AI 返回内容长度:", rawContent.length);
-            console.log("📄 AI 返回内容前1000字符:", rawContent.substring(0, 1000));
             
             const files = [];
             const lines = rawContent.split('\n');
