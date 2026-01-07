@@ -30,28 +30,16 @@ jobs:
 
       - name: Read Prompt Template
         id: prompt
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_COMMENTS: ""
+          EXISTING_FILES: ""
         run: |
-          PROMPT=$(cat .github/prompts/backend-agent-prompt.md)
-          
-          BACKEND_SPEC=""
-          if [ -f "BACKEND_SPEC.md" ]; then
-            BACKEND_SPEC=$(cat BACKEND_SPEC.md)
-          fi
-          
-          BACKEND_CLAUDE_MD=""
-          if [ -f "backend/CLAUDE.md" ]; then
-            BACKEND_CLAUDE_MD=$(cat backend/CLAUDE.md)
-          fi
-          
-          PROMPT="${PROMPT//\{\{BACKEND_SPEC\}\}/$BACKEND_SPEC}"
-          PROMPT="${PROMPT//\{\{BACKEND_CLAUDE_MD\}\}/$BACKEND_CLAUDE_MD}"
-          PROMPT="${PROMPT//\{\{ISSUE_TITLE\}\}/${{ github.event.issue.title }}}"
-          PROMPT="${PROMPT//\{\{ISSUE_BODY\}\}/${{ github.event.issue.body }}}"
-          PROMPT="${PROMPT//\{\{ISSUE_COMMENTS\}\}/}"
-          PROMPT="${PROMPT//\{\{EXISTING_FILES\}\}/}"
+          python3 .github/scripts/substitute-template.py .github/prompts/backend-agent-prompt.md > prompt_output.txt
           
           echo "AGENT_PROMPT<<EOF" >> $GITHUB_ENV
-          echo "$PROMPT" >> $GITHUB_ENV
+          cat prompt_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       - name: Run Claude Code Action
