@@ -1,0 +1,138 @@
+name: Vibe UI Agent
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  ui-agent:
+    if: contains(github.event.comment.body, '/agent-ui')
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+
+      - name: Vibe UI Agent - Generate UI Spec
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            async function runUIAgent() {
+              // 多行字符串内容写法，全部缩进去掉（YAML 格式不允许缩进），用反引号包裹，确保语法正确
+              const prompt =`
+                You are the **Product UI Architect Agent** for this repository. 
+                
+                Your mission is to transform a PRD into a **production-ready UI & interaction specification** that can be implemented by frontend engineers or agents WITHOUT further design decisions.
+
+                
+                ====================
+                PRD TITLE:
+                ${process.env.ISSUE_TITLE}
+                
+                PRD BODY:
+                ${process.env.ISSUE_BODY}
+                ====================
+                
+                You must work in the following order:
+                1. Extract interaction philosophy from the PRD.
+                2. Define interaction style & behavioral constraints.
+                3. Translate them into an engineering-ready UI specification.
+                4. Produce a strict UI freeze contract to guarantee implementability.
+                
+                --------------------
+                OUTPUT FORMAT (STRICT, DO NOT ADD EXTRA SECTIONS)
+                --------------------
+                
+                ## Interaction Philosophy
+                - Describe the user's cognitive load
+                - Describe system proactiveness
+                - Describe decision points (or lack thereof)
+                
+                ## Interaction Style & Preferences
+                - Primary interaction pattern
+                - Constraints on flow (no modals, no multi-step, etc.)
+                - Feedback strategy (inline vs global)
+                - What the system must NEVER ask the user to decide
+                
+                ## Page Layout
+                - Tree structure only
+                - Component hierarchy only
+                
+                ## Components
+                For each component:
+                - Responsibility
+                - Interaction
+                - States
+                
+                ## Interaction Flow
+                - Linear, numbered steps
+                - User action → system reaction
+                
+                ## UI States
+                - Enumerated, finite states only
+                
+                ## UI Freeze Contract
+                - Explicit declaration of frozen interaction philosophy
+                - Explicit declaration of frozen layout hierarchy
+                - Constraints for Frontend Agent
+                - Constraints for Backend Agent
+                
+                --------------------
+                RULES (NON-NEGOTIABLE)
+                --------------------
+                - DO NOT write code
+                - DO NOT discuss colors, typography, spacing, or aesthetics
+                - DO NOT design backend APIs, databases, or parsing logic
+                - DO NOT use subjective language (e.g. "beautiful", "clean", "nice")
+                - DO NOT add explanations outside the required sections
+                
+                Success criteria:
+                A frontend engineer or agent can implement the UI behavior and structure
+                using ONLY this specification, without making design or interaction decisions.
+                `;
+
+              const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  model: "google/gemini-3-flash-preview",
+                  messages: [{ role: "user", content: prompt }],
+                  temperature: 0.8
+                })
+              });
+
+              const data = await res.json();
+              if (!data.choices) throw new Error("UI Agent 返回异常");
+
+              const uiSpec = data.choices[0].message.content;
+
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body: [
+                  "🧩 **UI Agent Output（Frozen UI Spec）**",
+                  "",
+                  uiSpec,
+                  "",
+                  "---",
+                  "",
+                  "⚠️ **UI Freeze Notice**",
+                  "- 本 UI 结构在当前 Issue 生命周期内冻结",
+                  "- Frontend Agent 仅允许补逻辑",
+                  "- Backend Agent 不得假设 UI 变化"
+                ].join("\n")
+              });
+            }
+
+            await runUIAgent();
