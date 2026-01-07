@@ -1,0 +1,439 @@
+openapi: 3.1.0
+info:
+  title: VibeFlow API
+  description: AI-Native Development Workflow Backend API
+  version: 1.0.0
+  contact:
+    name: VibeFlow Team
+  license:
+    name: MIT
+
+servers:
+  - url: https://vibe-engineering-playbook-production-f716.up.railway.app
+    description: Production server
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Pomodoro
+    description: Pomodoro session management
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Basic health check
+      description: Returns basic health status for load balancer health checks
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness check
+      description: Returns detailed readiness status including dependency health
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: Service is degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+
+  /api/pomodoros:
+    get:
+      tags:
+        - Pomodoro
+      summary: List pomodoros
+      description: Returns a paginated list of pomodoros for the current user
+      operationId: listPomodoros
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of items to return (max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of items to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PomodoroListResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Pomodoro
+      summary: Create a pomodoro
+      description: Creates a new pomodoro session
+      operationId: createPomodoro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePomodoroRequest'
+      responses:
+        '201':
+          description: Pomodoro created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PomodoroResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/pomodoros/{id}:
+    get:
+      tags:
+        - Pomodoro
+      summary: Get a pomodoro
+      description: Returns a single pomodoro by ID
+      operationId: getPomodoro
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Pomodoro ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PomodoroResponse'
+        '400':
+          description: Invalid pomodoro ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pomodoro not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      tags:
+        - Pomodoro
+      summary: Update a pomodoro
+      description: Updates an existing pomodoro
+      operationId: updatePomodoro
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Pomodoro ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePomodoroRequest'
+      responses:
+        '200':
+          description: Pomodoro updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PomodoroResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pomodoro not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Pomodoro
+      summary: Delete a pomodoro
+      description: Deletes a pomodoro by ID
+      operationId: deletePomodoro
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Pomodoro ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Pomodoro deleted successfully
+        '400':
+          description: Invalid pomodoro ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/pomodoros/{id}/complete:
+    post:
+      tags:
+        - Pomodoro
+      summary: Complete a pomodoro
+      description: Marks a pomodoro as completed
+      operationId: completePomodoro
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Pomodoro ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Pomodoro completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PomodoroResponse'
+        '400':
+          description: Invalid pomodoro ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Pomodoro not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-01T12:00:00Z"
+
+    ReadinessResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-01T12:00:00Z"
+        services:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            database: healthy
+            cache: healthy
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Invalid request body"
+        request_id:
+          type: string
+          description: Request ID for tracing
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    CreatePomodoroRequest:
+      type: object
+      required:
+        - title
+        - duration
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          description: Title of the pomodoro session
+          example: "Work on feature X"
+        duration:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: Duration in minutes
+          example: 25
+
+    UpdatePomodoroRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          description: Updated title
+          example: "Updated task title"
+        is_completed:
+          type: boolean
+          description: Mark as completed
+          example: true
+
+    PomodoroResponse:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - start_time
+        - duration
+        - is_completed
+        - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier
+          example: 1
+        user_id:
+          type: integer
+          format: int64
+          description: User ID
+          example: 1
+        title:
+          type: string
+          description: Pomodoro title
+          example: "Work on feature X"
+        start_time:
+          type: string
+          format: date-time
+          description: Start time
+          example: "2024-01-01T10:00:00Z"
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: End time (null if not completed)
+          example: "2024-01-01T10:25:00Z"
+        duration:
+          type: integer
+          description: Duration in minutes
+          example: 25
+        is_completed:
+          type: boolean
+          description: Whether the pomodoro is completed
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2024-01-01T10:00:00Z"
+
+    PomodoroListResponse:
+      type: object
+      required:
+        - data
+        - limit
+        - offset
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PomodoroResponse'
+        limit:
+          type: integer
+          description: Number of items per page
+          example: 20
+        offset:
+          type: integer
+          description: Current offset
+          example: 0
