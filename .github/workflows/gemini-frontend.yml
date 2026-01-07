@@ -378,10 +378,11 @@ jobs:
               ONLY files inside frontend/ directory are allowed.
               
               ====================
-              OUTPUT FORMAT (MANDATORY)
+              OUTPUT FORMAT (MANDATORY - CRITICAL)
               ====================
-              Return ONLY valid JSON in this exact shape:
+              You MUST return ONLY valid JSON. No markdown code blocks, no explanations, no extra text.
               
+              Required JSON structure:
               {
                 "files": [
                   {
@@ -391,9 +392,22 @@ jobs:
                 ]
               }
               
-              No markdown.
-              No explanations.
-              No extra text.`;
+              CRITICAL RULES:
+              - Start your response with { and end with }
+              - Do NOT wrap JSON in markdown code blocks (no \`\`\`json)
+              - Do NOT add any text before or after the JSON
+              - Ensure all strings are properly escaped
+              - Ensure all file paths start with "frontend/"
+              
+              Example of CORRECT output:
+              {"files":[{"path":"frontend/app/page.tsx","content":"export default function Page() { return <div>Hello</div>; }"}]}
+              
+              Example of WRONG output (DO NOT DO THIS):
+              \`\`\`json
+              {"files":[...]}
+              \`\`\`
+              
+              Return ONLY the JSON object, nothing else.`;
               
               const userPrompt = `
                 ====================
@@ -466,6 +480,12 @@ jobs:
               // 5.1 Extract JSON from possible markdown code block or find JSON object
               let jsonStr = raw.trim();
               
+              console.log("📝 Model raw response length:", raw.length);
+              console.log("📝 Model raw response preview (first 1000 chars):");
+              console.log("-".repeat(80));
+              console.log(raw.substring(0, 1000));
+              console.log("-".repeat(80));
+              
               // Try to extract from markdown code block first
               const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
               if (jsonMatch) {
@@ -479,14 +499,18 @@ jobs:
                   jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
                   console.log("✅ Extracted JSON object from text");
                 } else {
-                  console.log("ℹ️  No JSON structure found, using raw content");
+                  console.log("⚠️  No JSON structure found, using raw content");
                 }
               }
 
               console.log("📄 JSON string length:", jsonStr.length);
-              console.log("📄 JSON string preview (first 500 chars):");
+              console.log("📄 JSON string preview (first 1000 chars):");
               console.log("-".repeat(80));
-              console.log(jsonStr.substring(0, 500));
+              console.log(jsonStr.substring(0, 1000));
+              console.log("-".repeat(80));
+              console.log("📄 JSON string preview (last 500 chars):");
+              console.log("-".repeat(80));
+              console.log(jsonStr.substring(Math.max(0, jsonStr.length - 500)));
               console.log("-".repeat(80));
 
               let parsed;
@@ -496,11 +520,36 @@ jobs:
                 console.log(`📦 Parsed object has ${parsed.files?.length || 0} files`);
               } catch (parseError) {
                 console.error("❌ JSON parse error:", parseError.message);
-                console.error("❌ JSON string (full):");
+                console.error("❌ Error position:", parseError.message.match(/position (\d+)/)?.[1] || "unknown");
+                console.error("❌ JSON string (full, length:", jsonStr.length, "chars):");
                 console.error("-".repeat(80));
                 console.error(jsonStr);
                 console.error("-".repeat(80));
-                throw new Error(`Model output is not valid JSON: ${parseError.message}`);
+                
+                // Try to fix common JSON issues
+                let fixedJson = jsonStr;
+                let fixed = false;
+                
+                // Remove trailing commas before } or ]
+                fixedJson = fixedJson.replace(/,(\s*[}\]])/g, '$1');
+                if (fixedJson !== jsonStr) {
+                  fixed = true;
+                  console.log("🔧 Attempted fix: Removed trailing commas");
+                }
+                
+                // Try parsing fixed JSON
+                if (fixed) {
+                  try {
+                    parsed = JSON.parse(fixedJson);
+                    console.log("✅ Fixed JSON parsed successfully");
+                    console.log(`📦 Parsed object has ${parsed.files?.length || 0} files`);
+                  } catch (fixError) {
+                    console.error("❌ Fixed JSON still invalid:", fixError.message);
+                    throw new Error(`Model output is not valid JSON: ${parseError.message}. Fixed version also failed: ${fixError.message}`);
+                  }
+                } else {
+                  throw new Error(`Model output is not valid JSON: ${parseError.message}`);
+                }
               }
 
               // 6. Write files with path validation
