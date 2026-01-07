@@ -9,13 +9,14 @@ import (
 	"syscall"
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"vibe-backend/internal/cache"
 	"vibe-backend/internal/config"
 	"vibe-backend/internal/database"
 	"vibe-backend/internal/models"
 	"vibe-backend/internal/router"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
