@@ -1,78 +1,114 @@
-import { CardData } from '@/types';
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ExternalLink, AlertCircle, User, Youtube, Twitter } from "lucide-react";
+import { CardData } from "@/types";
 
-interface Props {
+interface ContentCardProps {
   data: CardData;
-  onRetry: (id: string, url: string) => void;
+  loading?: boolean;
+  error?: string;
 }
 
-export default function ContentCard({ data, onRetry }: Props) {
-  if (data.status === 'PARSING_PENDING') {
+export default function ContentCard({ data, loading, error }: ContentCardProps) {
+  if (loading) {
     return (
-      <div className="w-full p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div className="h-4 w-24 bg-slate-100 rounded animate-skeleton mb-4" />
-        <div className="h-6 w-3/4 bg-slate-100 rounded animate-skeleton mb-6" />
-        <div className="space-y-3">
-          <div className="h-4 w-full bg-slate-100 rounded animate-skeleton" />
-          <div className="h-4 w-5/6 bg-slate-100 rounded animate-skeleton" />
-          <div className="h-4 w-4/6 bg-slate-100 rounded animate-skeleton" />
-        </div>
-      </div>
+      <Card className="w-full overflow-hidden border-slate-200">
+        <div className="h-48 w-full animate-skeleton" />
+        <CardHeader className="space-y-2">
+          <div className="h-6 w-3/4 animate-skeleton rounded" />
+          <div className="h-4 w-1/4 animate-skeleton rounded" />
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="h-4 w-full animate-skeleton rounded" />
+          <div className="h-4 w-full animate-skeleton rounded" />
+          <div className="h-4 w-2/3 animate-skeleton rounded" />
+        </CardContent>
+      </Card>
     );
   }
 
-  if (data.status === 'PARSING_FAILED') {
+  if (error || data.status === 'PARSING_FAILED') {
     return (
-      <div className="w-full p-6 bg-white rounded-xl border border-red-100 shadow-sm flex flex-col items-center text-center">
-        <p className="text-slate-600 mb-4">Unable to parse this link</p>
-        <button
-          onClick={() => onRetry(data.id, data.url)}
-          className="text-sm font-medium text-blue-600 hover:underline"
-        >
-          Try again
-        </button>
-      </div>
+      <Card className="w-full border-destructive/50 bg-destructive/5">
+        <CardContent className="pt-6 flex flex-col items-center text-center space-y-3">
+          <AlertCircle className="h-10 w-10 text-destructive" />
+          <div className="space-y-1">
+            <p className="font-semibold text-destructive">Parsing Failed</p>
+            <p className="text-sm text-muted-foreground">{error || "We couldn't process this URL. Please check if it's a valid YouTube or Twitter link."}</p>
+          </div>
+          <a 
+            href={data.url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-xs underline text-muted-foreground hover:text-primary"
+          >
+            View Original Link
+          </a>
+        </CardContent>
+      </Card>
     );
   }
+
+  const isYoutube = data.url.includes('youtube.com') || data.url.includes('youtu.be');
 
   return (
-    <div className="w-full p-6 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-colors">
-      <div className="flex justify-between items-start mb-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          {data.author}
-        </span>
-        <span className="text-xs text-slate-400">{data.metadata}</span>
-      </div>
-      
+    <Card className="w-full overflow-hidden transition-all hover:shadow-md border-slate-200">
       <a 
         href={data.url} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="block group"
+        className="block relative group"
       >
-        <h2 className="text-xl font-bold text-slate-900 mb-4 group-hover:text-blue-600 transition-colors">
-          {data.title}
-        </h2>
-      </a>
-
-      <div className="space-y-2">
-        {data.summary?.map((point, i) => (
-          <div key={i} className="flex gap-3">
-            <span className="text-slate-300">•</span>
-            <p className="text-slate-600 text-sm leading-relaxed">{point}</p>
+        <div className="h-48 bg-slate-100 flex items-center justify-center overflow-hidden">
+          {/* In a real app, we'd use an <img> with data.thumbnail_url */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+            <ExternalLink className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
-        ))}
-      </div>
+          <div className="flex flex-col items-center text-slate-400">
+            {isYoutube ? <Youtube size={48} /> : <Twitter size={48} />}
+            <span className="text-xs mt-2">Preview available at source</span>
+          </div>
+        </div>
+      </a>
+      
+      <CardHeader className="pb-2">
+        <div className="flex justify-between items-start gap-2">
+          <a 
+            href={data.url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="hover:text-primary transition-colors"
+          >
+            <CardTitle className="text-lg leading-tight line-clamp-2">
+              {data.title || "Untitled Content"}
+            </CardTitle>
+          </a>
+          <Badge variant="secondary" className="shrink-0">
+            {isYoutube ? 'YouTube' : 'Twitter'}
+          </Badge>
+        </div>
+        <div className="flex items-center text-sm text-muted-foreground mt-1">
+          <User className="h-3 w-3 mr-1" />
+          <span>{data.author || "Unknown Author"}</span>
+        </div>
+      </CardHeader>
 
-      <div className="mt-6 pt-4 border-t border-slate-50">
-        <a 
-          href={data.url} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-xs text-blue-500 hover:text-blue-700 font-medium"
-        >
-          View Original Source →
-        </a>
-      </div>
-    </div>
+      <CardContent>
+        <div className="space-y-2">
+          {data.summary?.map((point, idx) => (
+            <div key={idx} className="flex gap-2 text-sm text-slate-600">
+              <span className="text-primary font-bold">•</span>
+              <p>{point}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+            Parsed {new Date(data.timestamp).toLocaleDateString()}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -353,23 +353,24 @@ export default function MyComponent() {
 
 <!-- AGENT_SYSTEM_FILES_START -->
 ```
-frontend/package.json
-frontend/tsconfig.json
-frontend/tailwind.config.ts
-frontend/components.json
-frontend/middleware.ts
+frontend/app/globals.css
 frontend/app/layout.tsx
 frontend/app/page.tsx
-frontend/app/globals.css
+frontend/components.json
+frontend/hooks/index.ts
 frontend/lib/api/client.ts
 frontend/lib/api/config.ts
+frontend/lib/api/endpoints.ts
 frontend/lib/api/types.ts
 frontend/lib/config/env.ts
-frontend/lib/utils/utils.ts
-frontend/lib/utils/toast.ts
 frontend/lib/constants/index.ts
+frontend/lib/utils/toast.ts
+frontend/lib/utils/utils.ts
+frontend/middleware.ts
+frontend/package.json
+frontend/tailwind.config.ts
+frontend/tsconfig.json
 frontend/types/index.ts
-frontend/hooks/index.ts
 ```
 <!-- AGENT_SYSTEM_FILES_END -->
 
