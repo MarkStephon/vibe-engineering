@@ -8,5 +8,6 @@ export interface CardData {
   title?: string;
   author?: string;
   summary?: string[];
+  thumbnailUrl?: string;
   metadata?: string;
 }

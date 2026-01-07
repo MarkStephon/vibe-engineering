@@ -7,13 +7,15 @@ export interface ParseRequest {
 
 export interface ParseResponse {
   id: string;
-  url: string;
+  source: "youtube" | "twitter";
   title: string;
   author: string;
-  summary: string[];
-  thumbnail_url?: string;
-  status: "SUCCESS" | "FAILED";
-  error_code?: string;
+  summary: string; // Backend returns string, not array
+  thumbnailUrl: string;
+  originalUrl: string;
+  metadata?: {
+    publishedAt?: string;
+  };
 }
 
 export const contentApi = {

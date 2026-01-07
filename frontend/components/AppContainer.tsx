@@ -24,14 +24,20 @@ export default function AppContainer() {
     try {
       const response = await contentApi.parseUrl(url);
       
+      // Convert summary string to array (split by newlines or periods)
+      const summaryArray = response.summary
+        ? response.summary.split(/\n+|\.\s+/).filter(s => s.trim().length > 0)
+        : [];
+      
       const newCard: CardData = {
         id: response.id,
-        url: response.url,
-        status: response.status === 'SUCCESS' ? 'DISPLAY_READY' : 'PARSING_FAILED',
+        url: response.originalUrl,
+        status: 'DISPLAY_READY',
         timestamp: new Date().toISOString(),
         title: response.title,
         author: response.author,
-        summary: response.summary,
+        summary: summaryArray,
+        thumbnailUrl: response.thumbnailUrl,
       };
 
       setCards(prev => [newCard, ...prev]);

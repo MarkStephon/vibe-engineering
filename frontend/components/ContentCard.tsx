@@ -60,15 +60,36 @@ export default function ContentCard({ data, loading, error }: ContentCardProps) 
         rel="noopener noreferrer"
         className="block relative group"
       >
-        <div className="h-48 bg-slate-100 flex items-center justify-center overflow-hidden">
-          {/* In a real app, we'd use an <img> with data.thumbnail_url */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-            <ExternalLink className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-          <div className="flex flex-col items-center text-slate-400">
-            {isYoutube ? <Youtube size={48} /> : <Twitter size={48} />}
-            <span className="text-xs mt-2">Preview available at source</span>
-          </div>
+        <div className="h-48 bg-slate-100 flex items-center justify-center overflow-hidden relative">
+          {data.thumbnailUrl ? (
+            <>
+              <img 
+                src={data.thumbnailUrl} 
+                alt={data.title || "Content thumbnail"}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Fallback to icon if image fails to load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const fallback = target.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.style.display = 'flex';
+                }}
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center hidden">
+                <ExternalLink className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                <ExternalLink className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <div className="flex flex-col items-center text-slate-400">
+                {isYoutube ? <Youtube size={48} /> : <Twitter size={48} />}
+                <span className="text-xs mt-2">Preview available at source</span>
+              </div>
+            </>
+          )}
         </div>
       </a>
       
