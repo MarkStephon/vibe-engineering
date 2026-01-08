@@ -13,6 +13,7 @@ jobs:
       issues: write
       contents: write
       pull-requests: write
+      workflows: write
 
     steps:
       - name: Checkout Repo
@@ -414,6 +415,7 @@ jobs:
                 PATH CONSTRAINTS:
                 - Implementation files must be under backend/
                 - API docs must be under api/
+                - DO NOT modify any files under .github/workflows/ (workflow files are off-limits)
                 - Follow the existing directory structure:
                   * backend/cmd/server/main.go - Entry point
                   * backend/internal/router/router.go - Route definitions
@@ -585,6 +587,18 @@ jobs:
                   ].join("\n")
                 });
                 return;
+              }
+              
+              // Restore any workflow files that were modified (they should not be changed)
+              try {
+                const workflowFiles = execSync("git diff --name-only .github/workflows/", { encoding: "utf8" }).trim();
+                if (workflowFiles) {
+                  console.log("⚠️  检测到 workflow 文件被修改，正在恢复...");
+                  execSync("git checkout HEAD -- .github/workflows/", { encoding: "utf8" });
+                  console.log("✅ Workflow 文件已恢复");
+                }
+              } catch (e) {
+                // No workflow files changed, continue
               }
               
               // Commit changes
