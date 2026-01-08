@@ -717,7 +717,7 @@ jobs:
                 
                 // Additional check: ensure normalized path is still within frontend/
                 // This prevents paths like "frontend/../../other-dir/file"
-                const pathParts = normalizedPath.split(path.sep);
+                const pathParts = normalizedPath.split('/');
                 if (pathParts[0] !== "frontend" || pathParts.includes("..")) {
                   fileChanges.errors.push(`路径无效: ${file.path} - 必须在 frontend/ 目录内`);
                   continue;
