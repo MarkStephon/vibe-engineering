@@ -595,6 +595,12 @@ jobs:
                   continue;
                 }
                 
+                // FORBIDDEN: demo/ directory - No demo/example pages allowed
+                if (normalizedPath.includes("/demo/") || normalizedPath.includes("/example/") || normalizedPath.includes("/sample/")) {
+                  fileChanges.errors.push(`路径被拒绝: ${file.path} - 禁止创建 demo/example/sample 目录。必须生成真实可用的功能代码，而不是示例页面。`);
+                  continue;
+                }
+                
                 // Prevent path traversal attacks (even within frontend/)
                 if (normalizedPath.includes("../") || normalizedPath.includes("..\\")) {
                   fileChanges.errors.push(`路径不安全: ${file.path} - 不允许使用路径遍历`);
