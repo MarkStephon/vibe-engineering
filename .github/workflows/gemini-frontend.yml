@@ -539,9 +539,9 @@ jobs:
                 7. **样式文件管理**：
                    - **严禁修改 frontend/app/globals.css 文件**
                    - 如果需要自定义样式，在组件目录下创建独立的 CSS 文件：
-                     * CSS Modules: `frontend/components/my-component.module.css`
-                     * 或普通 CSS: `frontend/components/my-component.css`
-                     * 在组件文件中导入：`import styles from './my-component.module.css'`
+                     * CSS Modules: "frontend/components/my-component.module.css"
+                     * 或普通 CSS: "frontend/components/my-component.css"
+                     * 在组件文件中导入："import styles from './my-component.module.css'"
                    - 优先使用 Tailwind CSS 工具类，只在必要时使用自定义 CSS
                    - 样式文件应该与组件文件放在同一目录下
                 8. **必须遵循项目的设计系统**（参考 STYLE_GUIDE.md）：
