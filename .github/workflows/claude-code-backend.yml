@@ -57,10 +57,11 @@ jobs:
 
               // 1. Extract UI Spec URLs (支持多个 URL，支持 issue 和 comment)
               // 支持 GitHub 自动转换的 markdown 链接格式: [#139 (comment)](https://...)
-              // 支持两种格式：
+              // 支持三种格式：
+              // - Issue URL (带锚点): https://github.com/owner/repo/issues/166#issue-3791738749
+              // - Issue URL (不带锚点): https://github.com/owner/repo/issues/161
               // - Comment URL: https://github.com/owner/repo/issues/139#issuecomment-123456
-              // - Issue URL: https://github.com/owner/repo/issues/166#issue-3791738749
-              const urlPattern = /https:\/\/github\.com\/[^\s\)]+\/issues\/\d+#(?:issuecomment-|issue-)\d+/g;
+              const urlPattern = /https:\/\/github\.com\/[^\s\)]+\/issues\/\d+(?:#(?:issuecomment-|issue-)\d+)?/g;
               const urlMatches = commentBody.match(urlPattern) || [];
 
               console.log(`🔍 找到 ${urlMatches.length} 个 URL:`);
@@ -84,13 +85,18 @@ jobs:
                     "",
                     "示例（支持 Issue 或 Comment URL）：",
                     "```",
+                    "# Issue URL (推荐，直接读取 issue 内容)",
+                    "/agent-be https://github.com/owner/repo/issues/161",
+                    "",
+                    "# Issue URL (带锚点)",
                     "/agent-be https://github.com/owner/repo/issues/166#issue-3791738749",
                     "",
+                    "# Comment URL",
                     "/agent-be https://github.com/owner/repo/issues/139#issuecomment-123456",
                     "",
-                    "或支持多个 URL：",
+                    "# 支持多个 URL：",
                     "/agent-be \\",
-                    "  https://github.com/owner/repo/issues/166#issue-3791738749 \\",
+                    "  https://github.com/owner/repo/issues/161 \\",
                     "  https://github.com/owner/repo/issues/139#issuecomment-123456",
                     "```",
                     "",
@@ -123,15 +129,17 @@ jobs:
               for (const specUrl of urlMatches) {
                 try {
                   // 判断 URL 类型：issue 还是 comment
-                  const isIssueUrl = specUrl.includes("#issue-");
                   const isCommentUrl = specUrl.includes("#issuecomment-");
+                  const isIssueUrlWithAnchor = specUrl.includes("#issue-");
+                  // 如果没有 comment 或 issue 锚点，则视为纯 issue URL
+                  const isIssueUrl = !isCommentUrl && (isIssueUrlWithAnchor || !specUrl.includes("#"));
                   
                   let specContent;
                   let specTitle;
                   
                   if (isIssueUrl) {
-                    // 提取 issue number
-                    const issueMatch = specUrl.match(/\/issues\/(\d+)#issue-/);
+                    // 提取 issue number（支持带锚点和不带锚点的格式）
+                    const issueMatch = specUrl.match(/\/issues\/(\d+)/);
                     if (!issueMatch) {
                       throw new Error(`无法解析 Issue URL: ${specUrl}`);
                     }
