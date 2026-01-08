@@ -43,6 +43,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - LOG_LEVEL=debug
       - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+      - OPENROUTER_API_KEY=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
     depends_on:
       db:
         condition: service_healthy
