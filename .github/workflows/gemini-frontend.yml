@@ -1245,7 +1245,7 @@ jobs:
               }
 
               // 6.2 Record changes to changelog
-              const changelogPath = path.join(process.cwd(), "frontend/AGENT_CHANGELOG.md");
+              // changelogPath 已在 Step 2.2 定义
               const timestamp = new Date().toISOString();
               const changelogEntry = [
                 `## ${timestamp} - Issue #${issue_number}`,
@@ -1289,7 +1289,7 @@ jobs:
               ].join("\n");
               
               // Read existing changelog or create new one
-              let changelogContent = "";
+              // changelogContent 已在 Step 2.2 定义，这里重新读取最新内容
               if (fs.existsSync(changelogPath)) {
                 changelogContent = fs.readFileSync(changelogPath, "utf8");
               } else {
