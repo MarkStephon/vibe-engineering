@@ -229,7 +229,328 @@ jobs:
                 }
               }
 
-              // 2.2 Post analysis and todolist comment
+              // 2.2 读取项目历史和架构文档
+              console.log("Step 2.2: 读取项目历史和架构文档...");
+              
+              // 读取 AGENT_CHANGELOG.md - 了解之前的变更记录
+              let changelogContent = "";
+              const changelogPath = path.join(process.cwd(), "frontend/AGENT_CHANGELOG.md");
+              if (fs.existsSync(changelogPath)) {
+                changelogContent = fs.readFileSync(changelogPath, "utf8");
+                console.log(`✅ 读取 AGENT_CHANGELOG.md (${changelogContent.length} 字符)`);
+              } else {
+                console.log("⚠️ AGENT_CHANGELOG.md 不存在");
+              }
+              
+              // 读取 ARCHITECTURE.md - 了解项目结构
+              let architectureContent = "";
+              const architecturePath = path.join(process.cwd(), "frontend/ARCHITECTURE.md");
+              if (fs.existsSync(architecturePath)) {
+                architectureContent = fs.readFileSync(architecturePath, "utf8");
+                console.log(`✅ 读取 ARCHITECTURE.md (${architectureContent.length} 字符)`);
+              } else {
+                console.log("⚠️ ARCHITECTURE.md 不存在");
+              }
+              
+              // 从 changelog 提取已有文件列表
+              const existingFilesFromChangelog = [];
+              const filePatterns = changelogContent.match(/`frontend\/[^`]+`/g) || [];
+              filePatterns.forEach(match => {
+                const filePath = match.replace(/`/g, '');
+                if (!existingFilesFromChangelog.includes(filePath)) {
+                  existingFilesFromChangelog.push(filePath);
+                }
+              });
+              console.log(`📦 从 CHANGELOG 提取到 ${existingFilesFromChangelog.length} 个已有文件`);
+              
+              // 2.3 Code-level analysis - 分析规格类型、UI工程细节、后端接口
+              console.log("Step 2.3: 代码级别分析（UI 工程 + 后端接口）...");
+              
+              const codeAnalysisPrompt = [
+                "你是前端代码架构分析专家。请分析以下规格内容，结合项目历史和架构，确定实现策略。",
+                "",
+                "====================",
+                "📋 输入的规格内容",
+                "====================",
+                combinedUISpec,
+                "",
+                userInstructions ? "====================\n用户额外指令\n====================\n" + userInstructions + "\n" : "",
+                "====================",
+                "📜 项目变更历史（AGENT_CHANGELOG.md）",
+                "====================",
+                "以下是之前 Agent 的变更记录，用于判断哪些文件已存在、哪些功能已实现：",
+                "",
+                changelogContent.substring(0, 8000) || "（无历史记录）",
+                changelogContent.length > 8000 ? "\n... 历史记录过长已截断 ..." : "",
+                "",
+                "====================",
+                "🏗️ 项目架构（ARCHITECTURE.md 摘要）",
+                "====================",
+                "以下是项目的目录结构和模块说明，用于确定文件应该放在哪里：",
+                "",
+                // 只提取关键部分：项目结构和系统文件列表
+                "### 项目结构",
+                "```",
+                "frontend/",
+                "├── app/                 # Next.js App Router (页面)",
+                "├── components/          # React 组件",
+                "│   ├── ui/             # shadcn/ui 组件库（只读）",
+                "│   └── ...             # 业务组件",
+                "├── hooks/              # 自定义 Hooks",
+                "├── lib/                # 核心库",
+                "│   ├── api/           # API 服务层",
+                "│   ├── config/        # 配置模块",
+                "│   ├── constants/     # 常量定义",
+                "│   └── utils/         # 工具函数",
+                "└── types/              # 类型定义",
+                "```",
+                "",
+                "### 已存在的文件（从 CHANGELOG 提取）",
+                existingFilesFromChangelog.length > 0 
+                  ? existingFilesFromChangelog.map(f => `- ${f}`).join("\n")
+                  : "（无已知文件）",
+                "",
+                "====================",
+                "分析任务",
+                "====================",
+                "1. 识别规格类型（UI设计 / 后端接口 / 混合）",
+                "2. **基于历史记录判断**：是新增页面/组件，还是修改已有的",
+                "3. 分析 UI 工程细节（目标页面、组件结构）",
+                "4. 分析后端接口（API endpoints、请求/响应格式）",
+                "",
+                "====================",
+                "输出格式（严格 JSON）",
+                "====================",
+                "{",
+                '  "spec_types": ["ui_design", "backend_api"],',
+                '  "operation_type": "new_page | add_feature | fix_bug | refactor | style_change | remove_feature",',
+                '  "page_type": "new_page | existing_page",',
+                '  "target_page": "目标页面路径（如 frontend/app/page.tsx）",',
+                '  "target_page_is_new": true,',
+                '  "target_components": ["需要修改或新建的组件路径"],',
+                '  "files_to_create": ["需要新建的文件路径"],',
+                '  "files_to_modify": ["需要修改的已有文件路径"],',
+                '  "change_scope": "修改范围描述",',
+                '  "preserve_list": ["需要保留不变的功能"],',
+                '  "api_endpoints": [',
+                '    {',
+                '      "method": "GET | POST | PUT | DELETE",',
+                '      "path": "/api/xxx",',
+                '      "description": "接口描述",',
+                '      "request_params": {"key": "type"},',
+                '      "response_format": {"key": "type"}',
+                '    }',
+                '  ],',
+                '  "data_types": [',
+                '    {',
+                '      "name": "TypeName",',
+                '      "fields": {"field": "type"}',
+                '    }',
+                '  ],',
+                '  "reasoning": "基于历史记录和项目结构的分析推理"',
+                "}",
+                "",
+                "【spec_types 判断指南】",
+                "- ui_design: 包含 UI 设计、组件设计、交互流程、页面布局等",
+                "- backend_api: 包含 API 接口定义、请求响应格式、数据结构等",
+                "- 可以同时包含多个类型",
+                "",
+                "【operation_type 判断指南】",
+                "- new_page: 创建全新页面",
+                "- add_feature: 在现有页面新增功能（关键词：添加、新增、增加、实现）",
+                "- fix_bug: 修复现有代码问题（关键词：修复、解决、bug、问题）",
+                "- refactor: 重构代码，功能不变（关键词：重构、优化、整理）",
+                "- style_change: 只修改样式（关键词：样式、颜色、字体、布局）",
+                "- remove_feature: 删除功能（关键词：删除、移除、去掉）",
+                "",
+                "【target_page 判断指南】",
+                "- 如果提到「首页」「主页」→ frontend/app/page.tsx",
+                "- 如果提到某个具体页面 → frontend/app/xxx/page.tsx",
+                "- 如果不确定 → frontend/app/page.tsx（默认首页）",
+                "- **关键**：检查 CHANGELOG 中是否已有该页面，判断 target_page_is_new",
+                "",
+                "【target_components 判断指南】",
+                "- 根据 UI 规格中提到的组件名推断路径",
+                "- 新组件 → frontend/components/NewComponentName.tsx",
+                "- 现有组件修改 → frontend/components/ExistingComponent.tsx",
+                "",
+                "【files_to_create vs files_to_modify 判断指南】",
+                "- **重要**：根据 CHANGELOG 中的「已存在的文件」列表判断",
+                "- 如果文件路径在 CHANGELOG 的「新建文件」或「修改文件」中出现过 → files_to_modify",
+                "- 如果文件路径未出现过 → files_to_create",
+                "- 这个判断决定了代码生成时是「完整编写」还是「增量修改」",
+                "",
+                "【api_endpoints 分析指南】",
+                "- 从后端接口规格中提取所有 API 端点",
+                "- 包括请求方法、路径、参数、响应格式",
+                "- 如果没有后端接口规格，此字段为空数组 []",
+                "",
+                "【data_types 分析指南】",
+                "- 从接口规格中提取需要定义的 TypeScript 类型",
+                "- 包括请求体类型、响应体类型、数据模型等",
+                "- 如果没有需要定义的类型，此字段为空数组 []",
+                "",
+                "只返回 JSON，不要其他内容。"
+              ].join("\n");
+
+              const codeAnalysisRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  model: "google/gemini-3-flash-preview",
+                  messages: [{ role: "user", content: codeAnalysisPrompt }],
+                  temperature: 0.3
+                })
+              });
+
+              const codeAnalysisData = await codeAnalysisRes.json();
+              const codeAnalysisRaw = codeAnalysisData.choices?.[0]?.message?.content || "";
+              
+              let codeAnalysisResult = {
+                spec_types: ["ui_design"],
+                operation_type: "add_feature",
+                page_type: "existing_page",
+                target_page: "frontend/app/page.tsx",
+                target_page_is_new: false,
+                target_components: [],
+                files_to_create: [],
+                files_to_modify: [],
+                change_scope: "",
+                preserve_list: [],
+                api_endpoints: [],
+                data_types: [],
+                reasoning: ""
+              };
+              
+              try {
+                let jsonStr = codeAnalysisRaw.trim();
+                const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+                if (jsonMatch) {
+                  jsonStr = jsonMatch[1].trim();
+                } else {
+                  const firstBrace = jsonStr.indexOf("{");
+                  const lastBrace = jsonStr.lastIndexOf("}");
+                  if (firstBrace !== -1 && lastBrace !== -1) {
+                    jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+                  }
+                }
+                codeAnalysisResult = JSON.parse(jsonStr);
+                console.log("✅ 代码分析解析成功:");
+                console.log(`   规格类型: ${codeAnalysisResult.spec_types?.join(", ") || "ui_design"}`);
+                console.log(`   操作类型: ${codeAnalysisResult.operation_type}`);
+                console.log(`   页面类型: ${codeAnalysisResult.page_type}`);
+                console.log(`   目标页面: ${codeAnalysisResult.target_page} (${codeAnalysisResult.target_page_is_new ? "新建" : "已存在"})`);
+                console.log(`   涉及组件: ${codeAnalysisResult.target_components?.join(", ") || "无"}`);
+                console.log(`   新建文件: ${codeAnalysisResult.files_to_create?.length || 0} 个`);
+                console.log(`   修改文件: ${codeAnalysisResult.files_to_modify?.length || 0} 个`);
+                console.log(`   API 端点: ${codeAnalysisResult.api_endpoints?.length || 0} 个`);
+                console.log(`   数据类型: ${codeAnalysisResult.data_types?.length || 0} 个`);
+              } catch (e) {
+                console.error("❌ 代码分析解析失败，使用默认值:", e.message);
+              }
+
+              // 2.4 读取目标页面和相关组件（如果是修改现有页面）
+              let targetPageContent = "";
+              let targetComponentsContent = {};
+              
+              if (codeAnalysisResult.page_type === "existing_page" && codeAnalysisResult.target_page) {
+                console.log(`📖 读取目标页面: ${codeAnalysisResult.target_page}`);
+                
+                try {
+                  const targetPath = path.join(process.cwd(), codeAnalysisResult.target_page);
+                  if (fs.existsSync(targetPath)) {
+                    targetPageContent = fs.readFileSync(targetPath, "utf8");
+                    console.log(`✅ 成功读取目标页面，长度: ${targetPageContent.length} 字符`);
+                    
+                    // 从页面中提取 import 的组件
+                    const importMatches = targetPageContent.match(/from\s+['"]@\/components\/([^'"]+)['"]/g) || [];
+                    const importedComponents = importMatches.map(m => {
+                      const match = m.match(/from\s+['"]@\/components\/([^'"]+)['"]/);
+                      if (match) {
+                        const compPath = match[1];
+                        return "frontend/components/" + compPath + (compPath.endsWith('.tsx') ? '' : '.tsx');
+                      }
+                      return null;
+                    }).filter(Boolean);
+                    
+                    // 合并分析出的组件和 import 的组件
+                    const allComponents = [...new Set([
+                      ...(codeAnalysisResult.target_components || []),
+                      ...importedComponents
+                    ])];
+                    
+                    // 读取组件内容
+                    for (const compPath of allComponents.slice(0, 10)) { // 最多读取10个
+                      try {
+                        const fullPath = path.join(process.cwd(), compPath);
+                        if (fs.existsSync(fullPath)) {
+                          const content = fs.readFileSync(fullPath, "utf8");
+                          targetComponentsContent[compPath] = content;
+                          console.log(`✅ 读取组件: ${compPath} (${content.length} 字符)`);
+                        }
+                      } catch (e) {
+                        // 忽略读取失败
+                      }
+                    }
+                  } else {
+                    console.log(`⚠️ 目标页面不存在: ${codeAnalysisResult.target_page}`);
+                  }
+                } catch (e) {
+                  console.error(`❌ 读取目标页面失败:`, e.message);
+                }
+              }
+
+              // 2.5 Post analysis and todolist comment
+              // 构建 API 端点展示
+              let apiEndpointsDisplay = "";
+              if (codeAnalysisResult.api_endpoints?.length > 0) {
+                apiEndpointsDisplay = [
+                  "",
+                  "### 🔌 后端接口分析",
+                  "",
+                  "| 方法 | 路径 | 描述 |",
+                  "|------|------|------|",
+                  ...codeAnalysisResult.api_endpoints.map(api => 
+                    `| \`${api.method}\` | \`${api.path}\` | ${api.description || '-'} |`
+                  ),
+                  ""
+                ].join("\n");
+              }
+              
+              // 构建数据类型展示
+              let dataTypesDisplay = "";
+              if (codeAnalysisResult.data_types?.length > 0) {
+                dataTypesDisplay = [
+                  "",
+                  "### 📦 数据类型",
+                  "",
+                  codeAnalysisResult.data_types.map(dt => `- \`${dt.name}\``).join("\n"),
+                  ""
+                ].join("\n");
+              }
+              
+              // 构建文件变更计划展示
+              let filesChangeDisplay = "";
+              if (codeAnalysisResult.files_to_create?.length > 0 || codeAnalysisResult.files_to_modify?.length > 0) {
+                filesChangeDisplay = [
+                  "",
+                  "### 📁 文件变更计划",
+                  "",
+                  codeAnalysisResult.files_to_create?.length > 0 ? [
+                    "**🆕 新建文件:**",
+                    ...codeAnalysisResult.files_to_create.map(f => `- \`${f}\``)
+                  ].join("\n") : "",
+                  codeAnalysisResult.files_to_modify?.length > 0 ? [
+                    "**✏️ 修改文件:**",
+                    ...codeAnalysisResult.files_to_modify.map(f => `- \`${f}\``)
+                  ].join("\n") : "",
+                  ""
+                ].filter(Boolean).join("\n");
+              }
+              
               await github.rest.issues.createComment({
                 owner,
                 repo,
@@ -237,13 +558,24 @@ jobs:
                 body: [
                   "📋 **需求分析完成**",
                   "",
-                  `**处理的 UI Spec (${uiSpecs.length} 个):**`,
+                  `**处理的规格 (${uiSpecs.length} 个):**`,
                   commentUrls.map((url, idx) => `${idx + 1}. ${url}`).join("\n"),
                   "",
                   userInstructions ? `**用户额外指令:**\n${userInstructions}\n` : "",
                   "### 需求分析",
                   analysisResult.analysis || "正在分析需求...",
                   "",
+                  "### 🔍 工程分析（基于项目历史）",
+                  `- **规格类型**: ${codeAnalysisResult.spec_types?.map(t => t === 'ui_design' ? '🎨 UI设计' : t === 'backend_api' ? '🔌 后端接口' : t).join(", ") || "UI设计"}`,
+                  `- **操作类型**: ${codeAnalysisResult.operation_type}`,
+                  `- **页面类型**: ${codeAnalysisResult.page_type}`,
+                  `- **目标页面**: \`${codeAnalysisResult.target_page}\` ${codeAnalysisResult.target_page_is_new ? "(🆕 新建)" : "(✏️ 已存在)"}`,
+                  `- **涉及组件**: ${codeAnalysisResult.target_components?.length > 0 ? codeAnalysisResult.target_components.map(c => `\`${c}\``).join(", ") : "无"}`,
+                  codeAnalysisResult.change_scope ? `- **修改范围**: ${codeAnalysisResult.change_scope}` : "",
+                  codeAnalysisResult.preserve_list?.length > 0 ? `- **保留功能**: ${codeAnalysisResult.preserve_list.join(", ")}` : "",
+                  filesChangeDisplay,
+                  apiEndpointsDisplay,
+                  dataTypesDisplay,
                   "### 📝 待办清单",
                   analysisResult.todolist.map((item, idx) => `- [ ] ${item}`).join("\n"),
                   "",
@@ -471,9 +803,145 @@ jobs:
                 ? `\n\n====================\n📦 现有业务代码（必须参考导出方式！）\n====================\n\n⚠️ **重要**：以下是项目中现有的业务代码。\n- 修改或导入这些文件时，必须使用正确的导入语法\n- 每个文件开头的注释说明了它使用的是 DEFAULT EXPORT 还是 NAMED EXPORT\n\n${existingComponentsText}`
                 : "";
               
+              // 构建代码分析上下文
+              const operationTypeMap = {
+                "new_page": "🆕 创建新页面",
+                "add_feature": "➕ 新增功能 - 在现有代码基础上添加，现有功能必须保持正常",
+                "fix_bug": "🐛 修复Bug - 只修改有问题的代码，其他保持不变",
+                "refactor": "🔧 重构 - 优化代码结构，功能必须保持完全一致",
+                "style_change": "🎨 样式调整 - 只修改UI/样式，不改动任何逻辑",
+                "remove_feature": "🗑️ 移除功能 - 删除指定功能，其他保持不变"
+              };
+              
+              // 构建 API 端点上下文
+              let apiEndpointsContext = "";
+              if (codeAnalysisResult.api_endpoints?.length > 0) {
+                apiEndpointsContext = [
+                  "",
+                  "## 🔌 后端 API 端点（需要调用的接口）",
+                  "",
+                  ...codeAnalysisResult.api_endpoints.map(api => [
+                    `### ${api.method} ${api.path}`,
+                    api.description ? `描述: ${api.description}` : "",
+                    api.request_params ? `请求参数: \`${JSON.stringify(api.request_params)}\`` : "",
+                    api.response_format ? `响应格式: \`${JSON.stringify(api.response_format)}\`` : "",
+                    ""
+                  ].filter(Boolean).join("\n")),
+                  ""
+                ].join("\n");
+              }
+              
+              // 构建数据类型上下文
+              let dataTypesContext = "";
+              if (codeAnalysisResult.data_types?.length > 0) {
+                dataTypesContext = [
+                  "",
+                  "## 📦 需要定义的 TypeScript 类型",
+                  "",
+                  "```typescript",
+                  ...codeAnalysisResult.data_types.map(dt => {
+                    const fields = dt.fields ? Object.entries(dt.fields).map(([k, v]) => `  ${k}: ${v};`).join("\n") : "";
+                    return `interface ${dt.name} {\n${fields}\n}`;
+                  }),
+                  "```",
+                  "",
+                  "**注意**: 将这些类型定义放在 `frontend/types/` 目录下，或者在组件文件中定义。",
+                  ""
+                ].join("\n");
+              }
+              
+              // 构建文件变更计划上下文
+              let filesChangeContext = "";
+              if (codeAnalysisResult.files_to_create?.length > 0 || codeAnalysisResult.files_to_modify?.length > 0) {
+                filesChangeContext = [
+                  "",
+                  "## 📁 文件变更计划（基于项目历史分析）",
+                  "",
+                  codeAnalysisResult.files_to_create?.length > 0 ? [
+                    "### 🆕 需要新建的文件（完整编写）",
+                    ...codeAnalysisResult.files_to_create.map(f => `- ${f}`),
+                    ""
+                  ].join("\n") : "",
+                  codeAnalysisResult.files_to_modify?.length > 0 ? [
+                    "### ✏️ 需要修改的已有文件（增量修改）",
+                    "**重要**：这些文件已经存在，你需要保留现有代码的功能，只做增量修改！",
+                    ...codeAnalysisResult.files_to_modify.map(f => `- ${f}`),
+                    ""
+                  ].join("\n") : "",
+                  ""
+                ].filter(Boolean).join("\n");
+              }
+              
+              let codeAnalysisSection = [
+                "",
+                "====================",
+                "🔍 代码分析结果（基于项目历史，决定你的修改策略）",
+                "====================",
+                "",
+                `**规格类型**: ${codeAnalysisResult.spec_types?.map(t => t === 'ui_design' ? '🎨 UI设计' : t === 'backend_api' ? '🔌 后端接口' : t).join(", ") || "UI设计"}`,
+                `**操作类型**: ${operationTypeMap[codeAnalysisResult.operation_type] || codeAnalysisResult.operation_type}`,
+                `**页面类型**: ${codeAnalysisResult.page_type === "new_page" ? "新页面" : "现有页面修改"}`,
+                `**目标页面**: ${codeAnalysisResult.target_page} ${codeAnalysisResult.target_page_is_new ? "(🆕 新建)" : "(✏️ 已存在，需保留现有功能)"}`,
+                codeAnalysisResult.target_components?.length > 0 ? `**涉及组件**: ${codeAnalysisResult.target_components.join(", ")}` : "",
+                codeAnalysisResult.change_scope ? `**修改范围**: ${codeAnalysisResult.change_scope}` : "",
+                codeAnalysisResult.preserve_list?.length > 0 ? `**必须保留的功能**: ${codeAnalysisResult.preserve_list.map(p => "- " + p).join("\n")}` : "",
+                filesChangeContext,
+                apiEndpointsContext,
+                dataTypesContext,
+                ""
+              ].filter(Boolean).join("\n");
+              
+              // 构建目标页面上下文（如果读取了目标页面）
+              let targetPageSection = "";
+              if (targetPageContent) {
+                targetPageSection = [
+                  "",
+                  "====================",
+                  "🎯 目标页面代码（这是你要修改的页面）",
+                  "====================",
+                  "",
+                  `文件: ${codeAnalysisResult.target_page}`,
+                  "",
+                  "```tsx",
+                  targetPageContent.substring(0, 15000),
+                  targetPageContent.length > 15000 ? "\n// ... 代码过长已截断 ..." : "",
+                  "```",
+                  ""
+                ].join("\n");
+              }
+              
+              // 构建目标组件上下文
+              let targetComponentsSection = "";
+              if (Object.keys(targetComponentsContent).length > 0) {
+                targetComponentsSection = [
+                  "",
+                  "====================",
+                  "📦 相关组件代码（页面引用的组件）",
+                  "====================",
+                  ""
+                ].join("\n");
+                
+                for (const [compPath, content] of Object.entries(targetComponentsContent)) {
+                  const hasDefaultExport = content.includes('export default');
+                  const exportInfo = hasDefaultExport 
+                    ? '// ⚠️ DEFAULT EXPORT - import ComponentName from "..."' 
+                    : '// ⚠️ NAMED EXPORT - import { ComponentName } from "..."';
+                  targetComponentsSection += `\n### ${compPath}\n${exportInfo}\n\`\`\`tsx\n${content.substring(0, 8000)}${content.length > 8000 ? "\n// ... 代码过长已截断 ..." : ""}\n\`\`\`\n`;
+                }
+              }
+              
+              // 组合完整的项目上下文（包含代码分析和目标代码）
+              const fullProjectContext = [
+                projectContextText,
+                existingCodeSection,
+                codeAnalysisSection,
+                targetPageSection,
+                targetComponentsSection
+              ].filter(Boolean).join("\n");
+              
               // Substitute template variables
               const userPrompt = userPromptTemplate
-                .replace("{{PROJECT_CONTEXT}}", projectContextText + existingCodeSection)
+                .replace("{{PROJECT_CONTEXT}}", fullProjectContext)
                 .replace("{{STYLE_GUIDE_CONTENT}}", styleGuideContent || '未找到 STYLE_GUIDE.md 文件')
                 .replace("{{UI_SPEC_COUNT}}", uiSpecCountText)
                 .replace("{{COMMENT_URLS}}", commentUrlsText)
@@ -484,6 +952,8 @@ jobs:
               console.log(`✅ 构建完成 user prompt: ${userPrompt.length} 字符`);
               console.log(`   - 系统文件: ${Object.keys(projectContext).length} 个`);
               console.log(`   - 业务文件: ${Object.keys(existingComponents).length} 个`);
+              console.log(`   - 目标页面: ${targetPageContent ? "已读取" : "无"}`);
+              console.log(`   - 目标组件: ${Object.keys(targetComponentsContent).length} 个`);
 
               // 5. Call model
               const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -493,7 +963,7 @@ jobs:
                   "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                  model: "anthropic/claude-sonnet-4.5",
+                  model: "google/gemini-3-flash-preview",
                   messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userPrompt }
@@ -845,14 +1315,17 @@ jobs:
                 fileChanges.modified.push("frontend/AGENT_CHANGELOG.md");
               }
 
-              // 6.3 Update ARCHITECTURE.md if directory structure or constraints changed
+              // 6.3 Update ARCHITECTURE.md - 始终更新以反映最新的文件结构
+              console.log("📝 更新 ARCHITECTURE.md...");
               if (fs.existsSync(architectureDocPath)) {
                 // Analyze if there are new important system files or directory structure changes
                 const newSystemFiles = [];
                 const newDirectories = new Set();
                 
-                // Check created files for potential system files
-                for (const file of fileChanges.created) {
+                // Check ALL generated files (both created and modified)
+                const allChangedFiles = [...fileChanges.created, ...fileChanges.modified];
+                
+                for (const file of allChangedFiles) {
                   // Check if it's a configuration file or important system file
                   const fileName = path.basename(file);
                   const isConfigFile = fileName.includes('config') || 
@@ -883,7 +1356,11 @@ jobs:
                                      file.startsWith('frontend/app/page') ||
                                      file.startsWith('frontend/app/globals');
                   
-                  if (isConfigFile || isKeyDir || isRootFile) {
+                  // 增加：业务组件也作为系统文件记录
+                  const isBusinessComponent = file.startsWith('frontend/components/') && 
+                                              !file.startsWith('frontend/components/ui/');
+                  
+                  if (isConfigFile || isKeyDir || isRootFile || isBusinessComponent) {
                     newSystemFiles.push(file);
                   }
                   
@@ -894,8 +1371,8 @@ jobs:
                   }
                 }
                 
-                // If there are new system files or significant changes, update ARCHITECTURE.md
-                if (newSystemFiles.length > 0 || fileChanges.created.length > 5) {
+                // 始终更新 ARCHITECTURE.md（如果有任何新文件）
+                if (newSystemFiles.length > 0 || fileChanges.created.length > 0) {
                   console.log(`📝 检测到架构变化，准备更新 ARCHITECTURE.md`);
                   console.log(`   新系统文件: ${newSystemFiles.length} 个`);
                   console.log(`   新目录: ${newDirectories.size} 个`);
