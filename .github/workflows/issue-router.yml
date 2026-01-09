@@ -1,0 +1,56 @@
+name: Issue Router
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    
+    steps:
+      - name: Route Issue to Agent
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const comment = context.payload.comment;
+            const body = comment?.body || issue?.body || '';
+            
+            // 识别触发命令
+            const triggers = {
+              '/agent-ui': { label: 'agent:ui' },
+              '/agent-be': { label: 'agent:backend' },
+              '/agent-fe': { label: 'agent:frontend' },
+            };
+            
+            let matched = null;
+            for (const [trigger, config] of Object.entries(triggers)) {
+              if (body.includes(trigger)) {
+                matched = { trigger, ...config };
+                break;
+              }
+            }
+            
+            if (matched) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [matched.label, '🤖 ai-processing']
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `🤖 **AI Agent 已启动**\n\n` +
+                      `命令: \`${matched.trigger}\`\n` +
+                      `状态: 处理中...\n\n` +
+                      `请在 [Actions](/${context.repo.owner}/${context.repo.repo}/actions) 标签页查看实时进度。`
+              });
+            }

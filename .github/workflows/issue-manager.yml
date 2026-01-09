@@ -1,0 +1,108 @@
+name: Issue Manager
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    
+    steps:
+      - name: Auto-label New Issues
+        if: github.event.action == 'opened'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const title = issue.title || '';
+            const text = (title + ' ' + body).toLowerCase();
+            
+            const labels = [];
+            
+            // 自动识别类型
+            if (text.includes('ui') || text.includes('前端') || text.includes('界面')) {
+              labels.push('frontend');
+            }
+            if (text.includes('api') || text.includes('后端') || text.includes('backend')) {
+              labels.push('backend');
+            }
+            if (text.includes('bug') || text.includes('错误')) {
+              labels.push('bug');
+            }
+            if (text.includes('feature') || text.includes('功能')) {
+              labels.push('enhancement');
+            }
+            
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels
+              });
+            }
+            
+            // 欢迎消息
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                "👋 欢迎！",
+                "",
+                labels.length > 0 ? `🏷️ 自动标签: ${labels.map(l => `\`${l}\``).join(', ')}` : "",
+                "",
+                "**可用的 AI 命令:**",
+                "- `/agent-ui` - 生成 UI 设计规格",
+                "- `/agent-be <ui-spec-url>` - 生成后端代码",
+                "- `/agent-fe <ui-spec-url>` - 生成前端代码"
+              ].join("\n")
+            });
+
+      - name: Clean Stale Processing
+        if: github.event.action == 'created' && contains(github.event.comment.body, '/clean-stale')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: '🤖 ai-processing',
+              state: 'open'
+            });
+            
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            let cleaned = 0;
+            
+            for (const issue of issues) {
+              if (new Date(issue.updated_at) < oneDayAgo) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: '🤖 ai-processing'
+                }).catch(() => {});
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: "⚠️ **处理超时** - 已移除 processing 标签。如需重试，请重新触发命令。"
+                });
+                
+                cleaned++;
+              }
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ 清理完成，共处理 ${cleaned} 个超时 issue。`
+            });
