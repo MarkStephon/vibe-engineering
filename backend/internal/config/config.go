@@ -28,6 +28,11 @@ type Config struct {
 	GeminiModel string `env:"GEMINI_MODEL" envDefault:"google/gemini-3-flash-preview"`
 	// YouTube Data API v3 configuration
 	YouTubeAPIKey string `env:"YOUTUBE_API_KEY" envDefault:""`
+
+	// Google OAuth 2.0 configuration
+	GoogleClientID     string `env:"GOOGLE_CLIENT_ID" envDefault:""`
+	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET" envDefault:""`
+	GoogleRedirectURL  string `env:"GOOGLE_REDIRECT_URL" envDefault:"http://localhost:3000/auth/google/callback"`
 }
 
 // Load parses environment variables and returns a Config struct.

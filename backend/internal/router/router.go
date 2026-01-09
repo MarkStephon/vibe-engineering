@@ -40,6 +40,11 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 	youtubeService := services.NewYouTubeService(cfg.OpenRouterAPIKey, cfg.GeminiModel, log)
 	videoHandler := handlers.NewVideoHandler(videoRepo, youtubeService, log)
 
+	// YouTube Data API v3 handlers
+	oauthService := services.NewOAuthService(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, log)
+	youtubeAPIService := services.NewYouTubeAPIService(cfg.YouTubeAPIKey, cache, oauthService, log)
+	youtubeAPIHandler := handlers.NewYouTubeAPIHandler(youtubeAPIService, oauthService, log)
+
 	// Health check routes (no auth required)
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Ready)
@@ -75,6 +80,24 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 
 			// History routes
 			v1.GET("/history", videoHandler.GetHistory)
+
+			// YouTube Data API v3 routes
+			auth := v1.Group("/auth")
+			{
+				auth.GET("/google/url", youtubeAPIHandler.GetAuthURL)
+			}
+
+			youtube := v1.Group("/youtube")
+			{
+				youtube.GET("/video", youtubeAPIHandler.GetVideoMetadata)
+				youtube.GET("/playlist", youtubeAPIHandler.GetPlaylist)
+				youtube.GET("/captions", youtubeAPIHandler.GetCaptions)
+			}
+
+			system := v1.Group("/system")
+			{
+				system.GET("/quota", youtubeAPIHandler.GetQuota)
+			}
 		}
 	}
 
