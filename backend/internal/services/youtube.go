@@ -33,10 +33,10 @@ func NewYouTubeService(apiKey string, geminiModel string, log *zap.Logger) *YouT
 	if geminiModel == "" {
 		geminiModel = "google/gemini-3-flash-preview"
 	}
-	
+
 	// Get YouTube API key from environment
 	youtubeAPIKey := os.Getenv("YOUTUBE_API_KEY")
-	
+
 	return &YouTubeService{
 		openRouterAPIKey: apiKey,
 		youtubeAPIKey:    youtubeAPIKey,
@@ -54,28 +54,28 @@ func (s *YouTubeService) GetVideoMetadataFromAPI(ctx context.Context, videoID st
 	if s.youtubeAPIKey == "" {
 		return nil, fmt.Errorf("YOUTUBE_API_KEY not configured")
 	}
-	
+
 	apiURL := fmt.Sprintf(
 		"https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=%s&key=%s",
 		videoID, s.youtubeAPIKey,
 	)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call YouTube API: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		s.log.Error("YouTube API error",
 			zap.Int("status", resp.StatusCode),
@@ -83,7 +83,7 @@ func (s *YouTubeService) GetVideoMetadataFromAPI(ctx context.Context, videoID st
 		)
 		return nil, fmt.Errorf("YouTube API returned status %d", resp.StatusCode)
 	}
-	
+
 	var apiResponse struct {
 		Items []struct {
 			Snippet struct {
@@ -106,17 +106,17 @@ func (s *YouTubeService) GetVideoMetadataFromAPI(ctx context.Context, videoID st
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	
+
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse YouTube API response: %w", err)
 	}
-	
+
 	if len(apiResponse.Items) == 0 {
 		return nil, fmt.Errorf("video not found or is private")
 	}
-	
+
 	item := apiResponse.Items[0]
-	
+
 	// Get best available thumbnail
 	thumbnailURL := item.Snippet.Thumbnails.MaxRes.URL
 	if thumbnailURL == "" {
@@ -128,10 +128,10 @@ func (s *YouTubeService) GetVideoMetadataFromAPI(ctx context.Context, videoID st
 	if thumbnailURL == "" {
 		thumbnailURL = fmt.Sprintf("https://img.youtube.com/vi/%s/maxresdefault.jpg", videoID)
 	}
-	
+
 	// Parse duration (ISO 8601 format: PT1H2M3S)
 	duration := parseISO8601Duration(item.ContentDetails.Duration)
-	
+
 	return &VideoMetadata{
 		VideoID:      videoID,
 		Title:        item.Snippet.Title,
@@ -145,26 +145,26 @@ func (s *YouTubeService) GetVideoMetadataFromAPI(ctx context.Context, videoID st
 func parseISO8601Duration(duration string) int {
 	// Remove "PT" prefix
 	duration = strings.TrimPrefix(duration, "PT")
-	
+
 	var hours, minutes, seconds int
-	
+
 	// Parse hours
 	if idx := strings.Index(duration, "H"); idx != -1 {
 		hours, _ = strconv.Atoi(duration[:idx])
 		duration = duration[idx+1:]
 	}
-	
+
 	// Parse minutes
 	if idx := strings.Index(duration, "M"); idx != -1 {
 		minutes, _ = strconv.Atoi(duration[:idx])
 		duration = duration[idx+1:]
 	}
-	
+
 	// Parse seconds
 	if idx := strings.Index(duration, "S"); idx != -1 {
 		seconds, _ = strconv.Atoi(duration[:idx])
 	}
-	
+
 	return hours*3600 + minutes*60 + seconds
 }
 
@@ -264,13 +264,19 @@ Please provide the response in JSON format with the following structure:
 		if logFile != nil {
 			defer logFile.Close()
 			logData := map[string]interface{}{
-				"sessionId":     "debug-session",
-				"runId":         "run1",
-				"hypothesisId":  "A",
-				"location":      "youtube.go:127",
-				"message":       "Raw Gemini response before parsing",
-				"data":          map[string]interface{}{"response": response, "responseLength": len(response), "firstChars": func() string { if len(response) > 100 { return response[:100] } else { return response } }()},
-				"timestamp":     time.Now().UnixMilli(),
+				"sessionId":    "debug-session",
+				"runId":        "run1",
+				"hypothesisId": "A",
+				"location":     "youtube.go:127",
+				"message":      "Raw Gemini response before parsing",
+				"data": map[string]interface{}{"response": response, "responseLength": len(response), "firstChars": func() string {
+					if len(response) > 100 {
+						return response[:100]
+					} else {
+						return response
+					}
+				}()},
+				"timestamp": time.Now().UnixMilli(),
 			}
 			json.NewEncoder(logFile).Encode(logData)
 		}
@@ -308,13 +314,13 @@ Please provide the response in JSON format with the following structure:
 		if logFile != nil {
 			defer logFile.Close()
 			logData := map[string]interface{}{
-				"sessionId":     "debug-session",
-				"runId":         "run1",
-				"hypothesisId":  "A",
-				"location":      "youtube.go:145",
-				"message":       "Cleaned response after removing markdown",
-				"data":          map[string]interface{}{"cleanedResponse": cleanedResponse, "cleanedLength": len(cleanedResponse)},
-				"timestamp":     time.Now().UnixMilli(),
+				"sessionId":    "debug-session",
+				"runId":        "run1",
+				"hypothesisId": "A",
+				"location":     "youtube.go:145",
+				"message":      "Cleaned response after removing markdown",
+				"data":         map[string]interface{}{"cleanedResponse": cleanedResponse, "cleanedLength": len(cleanedResponse)},
+				"timestamp":    time.Now().UnixMilli(),
 			}
 			json.NewEncoder(logFile).Encode(logData)
 		}
@@ -336,13 +342,19 @@ Please provide the response in JSON format with the following structure:
 			if logFile != nil {
 				defer logFile.Close()
 				logData := map[string]interface{}{
-					"sessionId":     "debug-session",
-					"runId":         "run1",
-					"hypothesisId":  "A",
-					"location":      "youtube.go:165",
-					"message":       "JSON parse error details",
-					"data":          map[string]interface{}{"error": err.Error(), "cleanedResponse": cleanedResponse, "responseStart": func() string { if len(cleanedResponse) > 200 { return cleanedResponse[:200] } else { return cleanedResponse } }()},
-					"timestamp":     time.Now().UnixMilli(),
+					"sessionId":    "debug-session",
+					"runId":        "run1",
+					"hypothesisId": "A",
+					"location":     "youtube.go:165",
+					"message":      "JSON parse error details",
+					"data": map[string]interface{}{"error": err.Error(), "cleanedResponse": cleanedResponse, "responseStart": func() string {
+						if len(cleanedResponse) > 200 {
+							return cleanedResponse[:200]
+						} else {
+							return cleanedResponse
+						}
+					}()},
+					"timestamp": time.Now().UnixMilli(),
 				}
 				json.NewEncoder(logFile).Encode(logData)
 			}
@@ -429,75 +441,74 @@ func (s *YouTubeService) AnalyzeVideo(ctx context.Context, videoID, targetLangua
 	return analysisResult, nil
 }
 
-<<<<<<< HEAD
 // FetchYouTubeTranscript attempts to fetch real transcript from YouTube.
 // Returns the transcript text or an error if not available.
 func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID string) (string, error) {
 	// First, get the video page to extract caption track info
 	videoPageURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", videoPageURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// Set headers to mimic a real browser
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7")
 	req.Header.Set("Accept-Encoding", "identity") // Don't compress to make parsing easier
-	
+
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch video page: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read video page: %w", err)
 	}
-	
+
 	pageContent := string(body)
-	
+
 	s.log.Debug("Fetched YouTube page",
 		zap.String("video_id", videoID),
 		zap.Int("page_length", len(pageContent)),
 	)
-	
+
 	// Method 1: Try to find captionTracks in ytInitialPlayerResponse
 	// This contains the actual subtitle tracks (not auto-translate)
 	captionTracksPattern := regexp.MustCompile(`"captionTracks"\s*:\s*\[([^\]]+)\]`)
 	captionTracksMatches := captionTracksPattern.FindStringSubmatch(pageContent)
-	
+
 	var captionURL string
 	var captionLang string
-	
+
 	if captionTracksMatches != nil && len(captionTracksMatches) >= 2 {
 		// Found captionTracks, extract the first baseUrl
 		trackContent := captionTracksMatches[1]
-		
+
 		// Extract baseUrl
 		baseURLPattern := regexp.MustCompile(`"baseUrl"\s*:\s*"([^"]+)"`)
 		urlMatches := baseURLPattern.FindStringSubmatch(trackContent)
 		if urlMatches != nil && len(urlMatches) >= 2 {
 			captionURL = urlMatches[1]
 		}
-		
+
 		// Extract language code of the caption
 		langPattern := regexp.MustCompile(`"languageCode"\s*:\s*"([^"]+)"`)
 		langMatches := langPattern.FindStringSubmatch(trackContent)
 		if langMatches != nil && len(langMatches) >= 2 {
 			captionLang = langMatches[1]
 		}
-		
+
 		s.log.Info("Found caption track",
 			zap.String("video_id", videoID),
 			zap.String("lang", captionLang),
 			zap.Bool("has_url", captionURL != ""),
 		)
 	}
-	
+
 	// Method 2: Try to find timedtext URL directly if captionTracks not found
 	if captionURL == "" {
 		timedtextPattern := regexp.MustCompile(`(https://www\.youtube\.com/api/timedtext[^"\\]+)`)
@@ -506,7 +517,7 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			captionURL = timedtextMatches[1]
 		}
 	}
-	
+
 	// Method 3: Try ytInitialPlayerResponse
 	if captionURL == "" {
 		playerResponsePattern := regexp.MustCompile(`ytInitialPlayerResponse\s*=\s*(\{.+?\});`)
@@ -515,53 +526,53 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			captionURL = s.extractCaptionURLFromPlayerResponse(playerMatches[1])
 		}
 	}
-	
+
 	if captionURL == "" {
 		s.log.Warn("No captions found in video page",
 			zap.String("video_id", videoID),
 		)
 		return "", fmt.Errorf("NO_CAPTIONS: 此视频没有可用的字幕（视频可能未开启字幕功能）")
 	}
-	
+
 	// Decode the URL (it's JSON escaped)
 	captionURL = strings.ReplaceAll(captionURL, "\\u0026", "&")
 	captionURL = strings.ReplaceAll(captionURL, "\\/", "/")
-	
+
 	// Add format parameter for XML output if not present
 	if !strings.Contains(captionURL, "&fmt=") {
 		captionURL = captionURL + "&fmt=srv3"
 	}
-	
+
 	s.log.Info("Found caption URL",
 		zap.String("video_id", videoID),
 		zap.String("caption_url", captionURL[:min(150, len(captionURL))]),
 		zap.String("caption_lang", captionLang),
 	)
-	
+
 	// Define languages to try
 	languages := []string{}
 	seen := make(map[string]bool)
-	
+
 	// If we detected a caption language, use it first
 	if captionLang != "" {
 		languages = append(languages, captionLang)
 		seen[captionLang] = true
 	}
-	
+
 	// Try to fetch captions
 	var captionText string
 	var lastErr error
-	
+
 	// First, try the URL as-is (it should have the correct language already)
 	s.log.Debug("Trying caption URL directly",
 		zap.String("video_id", videoID),
 		zap.String("url", captionURL[:min(100, len(captionURL))]),
 	)
-	
+
 	captionReq, err := http.NewRequestWithContext(ctx, "GET", captionURL, nil)
 	if err == nil {
 		captionReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-		
+
 		captionResp, err := s.httpClient.Do(captionReq)
 		if err == nil {
 			captionBody, err := io.ReadAll(captionResp.Body)
@@ -572,7 +583,7 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 					zap.Int("caption_length", len(captionBody)),
 					zap.String("first_200_chars", string(captionBody[:min(200, len(captionBody))])),
 				)
-				
+
 				captionText = s.parseYouTubeCaptions(string(captionBody))
 				if captionText != "" {
 					s.log.Info("Successfully parsed captions directly",
@@ -586,17 +597,17 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			lastErr = err
 		}
 	}
-	
+
 	// If direct URL didn't work, try with different language parameters
 	priorityLangs := []string{"zh-TW", "zh-Hant", "zh-Hans", "zh", "en", "ja", "ko"}
 	langsToTry := []string{}
-	
+
 	// Add detected language first
 	if captionLang != "" && !seen[captionLang] {
 		langsToTry = append(langsToTry, captionLang)
 		seen[captionLang] = true
 	}
-	
+
 	// Add priority languages
 	for _, lang := range priorityLangs {
 		if !seen[lang] {
@@ -604,7 +615,7 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			seen[lang] = true
 		}
 	}
-	
+
 	// Get base URL without lang parameter
 	baseCapURL := captionURL
 	if idx := strings.Index(baseCapURL, "&lang="); idx != -1 {
@@ -615,45 +626,45 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			baseCapURL = baseCapURL[:idx]
 		}
 	}
-	
+
 	for _, lang := range langsToTry {
 		tryURL := baseCapURL + "&lang=" + lang
-		
+
 		s.log.Debug("Trying caption URL with lang",
 			zap.String("video_id", videoID),
 			zap.String("lang", lang),
 		)
-		
+
 		captionReq, err := http.NewRequestWithContext(ctx, "GET", tryURL, nil)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		captionReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-		
+
 		captionResp, err := s.httpClient.Do(captionReq)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		captionBody, err := io.ReadAll(captionResp.Body)
 		captionResp.Body.Close()
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		if len(captionBody) == 0 {
 			continue
 		}
-		
+
 		s.log.Debug("Fetched caption content",
 			zap.String("video_id", videoID),
 			zap.String("lang", lang),
 			zap.Int("caption_length", len(captionBody)),
 		)
-		
+
 		// Parse the XML caption content
 		captionText = s.parseYouTubeCaptions(string(captionBody))
 		if captionText != "" {
@@ -665,7 +676,7 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			return captionText, nil
 		}
 	}
-	
+
 	if lastErr != nil {
 		return "", fmt.Errorf("NO_CAPTIONS: 字幕获取失败: %w", lastErr)
 	}
@@ -696,41 +707,41 @@ func (s *YouTubeService) parseYouTubeCaptions(xmlContent string) string {
 	// YouTube captions can be in different formats:
 	// 1. XML format: <text start="0" dur="5.5">Caption text</text>
 	// 2. JSON format (sometimes returned)
-	
+
 	// First, try XML format
 	textPattern := regexp.MustCompile(`<text[^>]*start="([^"]*)"[^>]*>([\s\S]*?)</text>`)
 	matches := textPattern.FindAllStringSubmatch(xmlContent, -1)
-	
+
 	if len(matches) == 0 {
 		// Try alternative XML patterns
 		altPattern := regexp.MustCompile(`<p[^>]*t="(\d+)"[^>]*>([\s\S]*?)</p>`)
 		matches = altPattern.FindAllStringSubmatch(xmlContent, -1)
 	}
-	
+
 	if len(matches) == 0 {
 		s.log.Debug("Failed to parse caption XML",
 			zap.String("content_preview", xmlContent[:min(500, len(xmlContent))]),
 		)
 		return ""
 	}
-	
+
 	var result strings.Builder
 	for _, match := range matches {
 		if len(match) >= 3 {
 			timestamp := match[1]
 			text := match[2]
-			
+
 			// Decode HTML entities
 			text = decodeHTMLEntities(text)
-			
+
 			// Clean up whitespace
 			text = strings.TrimSpace(text)
 			text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
-			
+
 			if text == "" {
 				continue
 			}
-			
+
 			// Convert timestamp to MM:SS format
 			seconds, _ := strconv.ParseFloat(timestamp, 64)
 			// Handle milliseconds format (t="1234" means 1.234 seconds in some formats)
@@ -739,39 +750,39 @@ func (s *YouTubeService) parseYouTubeCaptions(xmlContent string) string {
 			}
 			mins := int(seconds) / 60
 			secs := int(seconds) % 60
-			
+
 			result.WriteString(fmt.Sprintf("[%02d:%02d] %s\n", mins, secs, text))
 		}
 	}
-	
+
 	return result.String()
 }
 
 // decodeHTMLEntities decodes common HTML entities in text.
 func decodeHTMLEntities(text string) string {
 	replacements := map[string]string{
-		"&amp;":   "&",
-		"&lt;":    "<",
-		"&gt;":    ">",
-		"&quot;":  "\"",
-		"&#39;":   "'",
-		"&apos;":  "'",
-		"&nbsp;":  " ",
-		"&#x27;":  "'",
-		"&#x2F;":  "/",
-		"&#34;":   "\"",
-		"&#60;":   "<",
-		"&#62;":   ">",
-		"&lrm;":   "",
-		"&rlm;":   "",
-		"\n":      " ",
-		"\r":      "",
+		"&amp;":  "&",
+		"&lt;":   "<",
+		"&gt;":   ">",
+		"&quot;": "\"",
+		"&#39;":  "'",
+		"&apos;": "'",
+		"&nbsp;": " ",
+		"&#x27;": "'",
+		"&#x2F;": "/",
+		"&#34;":  "\"",
+		"&#60;":  "<",
+		"&#62;":  ">",
+		"&lrm;":  "",
+		"&rlm;":  "",
+		"\n":     " ",
+		"\r":     "",
 	}
-	
+
 	for entity, replacement := range replacements {
 		text = strings.ReplaceAll(text, entity, replacement)
 	}
-	
+
 	// Handle numeric entities like &#123;
 	numericPattern := regexp.MustCompile(`&#(\d+);`)
 	text = numericPattern.ReplaceAllStringFunc(text, func(match string) string {
@@ -781,7 +792,7 @@ func decodeHTMLEntities(text string) string {
 		}
 		return match
 	})
-	
+
 	return text
 }
 
@@ -793,7 +804,7 @@ func (s *YouTubeService) CallGeminiDirect(ctx context.Context, videoURL string) 
 	if err != nil {
 		return "", fmt.Errorf("invalid YouTube URL: %w", err)
 	}
-	
+
 	// Try to fetch real YouTube transcript
 	transcript, err := s.FetchYouTubeTranscript(ctx, videoID)
 	if err == nil && transcript != "" {
@@ -803,13 +814,13 @@ func (s *YouTubeService) CallGeminiDirect(ctx context.Context, videoURL string) 
 		)
 		return fmt.Sprintf("# 视频字幕 (来自 YouTube 官方字幕)\n\n%s", transcript), nil
 	}
-	
+
 	// Log why we couldn't get real transcript
 	s.log.Warn("Could not fetch real YouTube transcript",
 		zap.String("video_id", videoID),
 		zap.Error(err),
 	)
-	
+
 	// Return honest message - DO NOT let LLM hallucinate
 	errorMsg := fmt.Sprintf(`## ⚠️ 无法获取视频字幕
 
@@ -824,7 +835,7 @@ func (s *YouTubeService) CallGeminiDirect(ctx context.Context, videoURL string) 
 **建议:**
 - 请确认该视频是否有字幕（在 YouTube 播放器中点击 CC 按钮查看）
 - 尝试其他有字幕的视频`, videoID, videoURL)
-	
+
 	return errorMsg, nil
 }
 

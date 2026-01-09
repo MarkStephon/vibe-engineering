@@ -52,7 +52,6 @@ func (h *VideoHandler) GetMetadata(c *gin.Context) {
 		return
 	}
 
-<<<<<<< HEAD
 	// Determine video URL
 	var videoURL string
 	if req.URL != "" {
@@ -186,7 +185,7 @@ func (h *VideoHandler) AnalyzeVideo(c *gin.Context) {
 	go func() {
 		ctx := context.Background()
 		response, err := h.youtubeService.CallGeminiDirect(ctx, videoURL)
-		
+
 		// Get analysis record
 		analysisRecord, err2 := h.repo.GetAnalysisByJobID(ctx, jobID)
 		if err2 != nil {
@@ -311,31 +310,31 @@ func (h *VideoHandler) AnalyzeVideo(c *gin.Context) {
 		if logFile != nil {
 			defer logFile.Close()
 			logData := map[string]interface{}{
-				"sessionId":     "debug-session",
-				"runId":         "run1",
-				"hypothesisId":  "B",
-				"location":      "video.go:306",
-				"message":       "Returning jobId to frontend",
-				"data":          map[string]interface{}{"jobId": jobID, "status": "processing", "videoId": videoID, "requestBody": map[string]interface{}{"videoId": req.VideoID, "url": req.URL, "targetLanguage": req.TargetLanguage}},
-				"timestamp":     time.Now().UnixMilli(),
+				"sessionId":    "debug-session",
+				"runId":        "run1",
+				"hypothesisId": "B",
+				"location":     "video.go:306",
+				"message":      "Returning jobId to frontend",
+				"data":         map[string]interface{}{"jobId": jobID, "status": "processing", "videoId": videoID, "requestBody": map[string]interface{}{"videoId": req.VideoID, "url": req.URL, "targetLanguage": req.TargetLanguage}},
+				"timestamp":    time.Now().UnixMilli(),
 			}
 			json.NewEncoder(logFile).Encode(logData)
 		}
 	}()
 	// #endregion
-	
+
 	// Ensure response format matches frontend expectation exactly
 	response := gin.H{
 		"jobId":  jobID,
 		"status": "processing",
 	}
-	
+
 	h.log.Info("Returning jobId to frontend",
 		zap.String("job_id", jobID),
 		zap.String("video_id", videoID),
 		zap.Any("response", response),
 	)
-	
+
 	c.JSON(http.StatusOK, response)
 }
 

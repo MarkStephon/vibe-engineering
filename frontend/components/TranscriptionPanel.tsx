@@ -28,7 +28,7 @@ export default function TranscriptionPanel({ result, currentTime, onSeek }: Tran
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search in transcription..."
-          className="pl-10 h-12 rounded-full border-0 shadow-md bg-muted/50 focus:ring-2 focus:ring-primary"
+          className="pl-10 h-12 rounded-full border-0 bg-muted/50 focus:bg-background focus:outline-none transition-all duration-200"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
