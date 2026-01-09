@@ -175,9 +175,13 @@ jobs:
             // 5. 读取项目文件（通用版本）
             const systemFiles = [
               "backend/go.mod",
+              "backend/CLAUDE.md",
               "backend/cmd/server/main.go",
               "backend/internal/router/router.go",
-              "backend/internal/config/config.go"
+              "backend/internal/config/config.go",
+              "backend/internal/models/video.go",
+              "backend/internal/handlers/video.go",
+              "backend/internal/repository/video.go"
             ];
             
             const projectContext = {};
