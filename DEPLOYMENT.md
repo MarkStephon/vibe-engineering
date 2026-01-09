@@ -214,6 +214,11 @@ https://vibe-engineering-playbook-xxx.vercel.app
 psql $DATABASE_URL
 
 # 运行迁移 SQL
+
+# Vercel Build Configuration Fixed
+# Configured build command: cd frontend && npm run build
+# Output directory: frontend/.next
+# Triggering new deployment
 \i migrations/001_create_videos_table.sql
 ```
 
