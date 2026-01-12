@@ -28,6 +28,7 @@ func NewHealthHandler(db *database.PostgresDB, cache *cache.RedisCache) *HealthH
 type HealthResponse struct {
 	Status    string            `json:"status"`
 	Timestamp time.Time         `json:"timestamp"`
+	Version   string            `json:"version,omitempty"`
 	Services  map[string]string `json:"services,omitempty"`
 }
 
@@ -36,6 +37,7 @@ func (h *HealthHandler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, HealthResponse{
 		Status:    "ok",
 		Timestamp: time.Now().UTC(),
+		Version:   "2026-01-12-v5-force-deploy",
 	})
 }
 
