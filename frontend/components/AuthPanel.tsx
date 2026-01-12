@@ -11,10 +11,19 @@ export default function AuthPanel() {
 
   const handleAuth = async () => {
     setLoading(true);
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthPanel.tsx:handleAuth:start',message:'handleAuth called',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,D,E'})}).catch(()=>{});
+    // #endregion
     try {
       const { url } = await youtubeApi.getAuthUrl();
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthPanel.tsx:handleAuth:success',message:'getAuthUrl succeeded',data:{url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+      // #endregion
       window.location.href = url;
     } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AuthPanel.tsx:handleAuth:error',message:'getAuthUrl failed',data:{error:e instanceof Error ? e.message : String(e), errorName: e instanceof Error ? e.name : 'unknown'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,D'})}).catch(()=>{});
+      // #endregion
       toast.error("Failed to initialize authorization");
       setLoading(false);
     }

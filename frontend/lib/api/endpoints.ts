@@ -21,18 +21,29 @@ export const videoApi = {
 export const youtubeApi = {
   getVideo: (idOrUrl: string) =>
     apiClient.get<YoutubeMetadata & { cached: boolean }>("/v1/youtube/video", { params: { input: idOrUrl } }),
-  
+
   getPlaylist: (playlistId: string) =>
     apiClient.get<{ items: PlaylistVideo[]; cached: boolean }>("/v1/youtube/playlist", { params: { playlistId } }),
-  
+
   getCaptions: (videoId: string) =>
     apiClient.get<{ captions: CaptionTrack[]; cached: boolean }>("/v1/youtube/captions", { params: { videoId } }),
-  
+
   getQuota: () =>
     apiClient.get<QuotaStatus>("/v1/system/quota"),
 
-  getAuthUrl: () =>
-    apiClient.get<{ url: string }>("/v1/auth/google/url"),
+  getAuthUrl: async () => {
+    const response = await apiClient.get<{ authUrl: string; url?: string }>("/v1/auth/google/url");
+    return { url: response.authUrl || response.url || '' };
+  },
+
+  handleCallback: (code: string, state?: string) =>
+    apiClient.post<{
+      accessToken: string;
+      refreshToken: string;
+      tokenType: string;
+      expiry: string;
+      tokenJSON: string;
+    }>("/v1/auth/google/callback", { code, state }),
 };
 
 export const contentApi = {

@@ -44,7 +44,64 @@ func (h *YouTubeAPIHandler) GetAuthURL(c *gin.Context) {
 	authURL := h.oauthService.GetAuthURL(state)
 
 	c.JSON(http.StatusOK, models.AuthURLResponse{
-		AuthURL: authURL,
+		URL: authURL,
+	})
+}
+
+// HandleCallback handles Google OAuth callback.
+// POST /api/v1/auth/google/callback
+func (h *YouTubeAPIHandler) HandleCallback(c *gin.Context) {
+	var req models.OAuthCallbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Code:    models.ErrorInvalidInput,
+			Message: "无效的请求参数",
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.Code == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Code:    models.ErrorInvalidInput,
+			Message: "授权码不能为空",
+		})
+		return
+	}
+
+	// Exchange authorization code for access token
+	token, err := h.oauthService.ExchangeCode(c.Request.Context(), req.Code)
+	if err != nil {
+		h.log.Error("Failed to exchange authorization code",
+			zap.Error(err),
+		)
+		c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+			Code:    models.ErrorAuthFailed,
+			Message: "授权失败，请重试",
+		})
+		return
+	}
+
+	// Convert token to JSON for storage
+	tokenJSON, err := h.oauthService.TokenToJSON(token)
+	if err != nil {
+		h.log.Error("Failed to serialize token",
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Code:    models.ErrorAuthFailed,
+			Message: "授权失败，请重试",
+		})
+		return
+	}
+
+	// Return token to client for storage
+	c.JSON(http.StatusOK, models.OAuthCallbackResponse{
+		AccessToken:  token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		TokenType:    token.TokenType,
+		Expiry:       token.Expiry,
+		TokenJSON:    tokenJSON,
 	})
 }
 

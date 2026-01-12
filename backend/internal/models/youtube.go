@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // YouTubeVideoRequest represents the request for video metadata.
 type YouTubeVideoRequest struct {
 	Input string `json:"input" binding:"required"` // Can be URL or video ID
@@ -67,13 +69,22 @@ type QuotaResponse struct {
 
 // AuthURLResponse represents the OAuth authorization URL response.
 type AuthURLResponse struct {
-	AuthURL string `json:"authUrl"`
+	URL string `json:"url"`
 }
 
 // OAuthCallbackRequest represents the OAuth callback request.
 type OAuthCallbackRequest struct {
 	Code  string `json:"code" binding:"required"`
 	State string `json:"state"`
+}
+
+// OAuthCallbackResponse represents the OAuth callback response.
+type OAuthCallbackResponse struct {
+	AccessToken  string    `json:"accessToken"`
+	RefreshToken string    `json:"refreshToken"`
+	TokenType    string    `json:"tokenType"`
+	Expiry       time.Time `json:"expiry"`
+	TokenJSON    string    `json:"tokenJSON"`
 }
 
 // ErrorCode represents API error codes.

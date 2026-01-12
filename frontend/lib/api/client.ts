@@ -129,6 +129,10 @@ class ApiClient {
       console.log(`[API Client] ${method} ${url}`, body ? { body } : '');
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:url',message:'API request URL built',data:{fullUrl:url,API_BASE_PATH,endpoint,method},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
     // 构建请求配置
     const requestInit: RequestInit = {
       method,
@@ -144,8 +148,14 @@ class ApiClient {
     try {
       // 发送请求
       const response = await fetchWithTimeout(url, requestInit, timeout);
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:response',message:'API response received',data:{status:response.status,statusText:response.statusText,ok:response.ok,url:response.url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C,D'})}).catch(()=>{});
+      // #endregion
       return await handleResponse<T>(response);
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:error',message:'API request failed',data:{errorMessage:error instanceof Error ? error.message : String(error),errorName:error instanceof Error ? error.name : 'unknown'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,D'})}).catch(()=>{});
+      // #endregion
       // 处理错误
       if (error instanceof ApiError) {
         throw error;

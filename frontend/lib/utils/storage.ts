@@ -124,3 +124,53 @@ export function removeUserInfo(): void {
   removeStorageItem(STORAGE_KEYS.USER_INFO);
 }
 
+/**
+ * Google OAuth Token 类型
+ */
+export interface GoogleOAuthToken {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  expiry: string;
+}
+
+/**
+ * 设置 Google OAuth token
+ */
+export function setGoogleOAuthToken(token: GoogleOAuthToken): void {
+  setStorageItem('google_oauth_token', token);
+}
+
+/**
+ * 获取 Google OAuth token
+ */
+export function getGoogleOAuthToken(): GoogleOAuthToken | null {
+  return getStorageItem<GoogleOAuthToken>('google_oauth_token');
+}
+
+/**
+ * 删除 Google OAuth token
+ */
+export function removeGoogleOAuthToken(): void {
+  removeStorageItem('google_oauth_token');
+  removeStorageItem('google_access_token');
+  removeStorageItem('google_token_expiry');
+}
+
+/**
+ * 检查 Google OAuth token 是否已过期
+ */
+export function isGoogleTokenExpired(): boolean {
+  const expiry = localStorage.getItem('google_token_expiry');
+  if (!expiry) return true;
+  return new Date(expiry) < new Date();
+}
+
+/**
+ * 检查用户是否已授权 Google
+ */
+export function isGoogleAuthorized(): boolean {
+  const token = getGoogleOAuthToken();
+  return token !== null && !isGoogleTokenExpired();
+}
+

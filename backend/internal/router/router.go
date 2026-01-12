@@ -85,6 +85,7 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 			auth := v1.Group("/auth")
 			{
 				auth.GET("/google/url", youtubeAPIHandler.GetAuthURL)
+				auth.POST("/google/callback", youtubeAPIHandler.HandleCallback)
 			}
 
 			youtube := v1.Group("/youtube")

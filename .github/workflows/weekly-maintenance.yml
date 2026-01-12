@@ -28,7 +28,8 @@ jobs:
           anthropic_api_key: ${{ secrets.OPENROUTER_API_KEY }}
           # 使用 GitHub token 避免 OIDC token 获取失败
           github_token: ${{ github.token }}
-          track_progress: true
+          # track_progress is not supported for schedule events
+          # track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
 
