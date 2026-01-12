@@ -82,10 +82,11 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 			v1.GET("/history", videoHandler.GetHistory)
 
 			// YouTube Data API v3 routes
+			// OAuth 2.0 authentication endpoints
 			auth := v1.Group("/auth")
 			{
 				auth.GET("/google/url", youtubeAPIHandler.GetAuthURL)
-				auth.POST("/google/callback", youtubeAPIHandler.HandleCallback)
+				auth.POST("/google/callback", youtubeAPIHandler.HandleCallback) // Fix: This route must exist
 			}
 
 			youtube := v1.Group("/youtube")
