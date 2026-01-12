@@ -8,7 +8,8 @@
       "Bash(go build:*)",
       "Bash(go test:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix: Update router comments to trigger Railway rebuild\n\nTesting if Railway deployment is properly picking up route changes.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix: Update router comments to trigger Railway rebuild\n\nTesting if Railway deployment is properly picking up route changes.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nForce Railway cache bust to rebuild with latest router code\n\nRailway build cache is preventing the OAuth callback route from being included.\nAdded CACHEBUST arg to force fresh build.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

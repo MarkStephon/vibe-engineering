@@ -2,6 +2,9 @@ FROM golang:1.21 AS build
 
 WORKDIR /go/src/vibe-backend
 
+# Force cache bust for Railway deployment - 2026-01-12
+ARG CACHEBUST=2026-01-12
+
 # Copy go mod files first for better caching
 COPY backend/go.mod backend/go.sum ./
 
