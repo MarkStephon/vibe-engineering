@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,7 +12,6 @@ import { toast } from '@/lib/utils/toast';
 import VideoDetailView from './VideoDetailView';
 import { Card, CardContent } from "@/components/ui/card";
 import Header from './Header';
-import YoutubeDashboard from './YoutubeDashboard';
 
 export default function AppContainer() {
   const [url, setUrl] = useState('');
@@ -19,7 +19,6 @@ export default function AppContainer() {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [activeView, setActiveView] = useState<{ metadata: VideoMetadata; jobId: string } | null>(null);
-  const [showDashboard, setShowDashboard] = useState(false);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -49,10 +48,6 @@ export default function AppContainer() {
       setLoading(false);
     }
   };
-
-  if (showDashboard) {
-    return <YoutubeDashboard />;
-  }
 
   if (activeView) {
     return <VideoDetailView 
@@ -94,14 +89,15 @@ export default function AppContainer() {
           </p>
 
           <div className="pt-4 animate-fade-in-up" style={{ animationDelay: '250ms' }}>
-            <Button 
-              variant="secondary" 
-              onClick={() => setShowDashboard(true)}
-              className="rounded-full px-8 h-12 border-0 bg-secondary hover:bg-secondary/80 text-primary font-semibold"
-            >
-              <Database className="h-4 w-4 mr-2" />
-              Open Data Dashboard
-            </Button>
+            <Link href="/dashboard">
+              <Button
+                variant="secondary"
+                className="rounded-full px-8 h-12 border-0 bg-secondary hover:bg-secondary/80 text-primary font-semibold"
+              >
+                <Database className="h-4 w-4 mr-2" />
+                Open Data Dashboard
+              </Button>
+            </Link>
           </div>
         </div>
 
