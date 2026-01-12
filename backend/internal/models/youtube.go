@@ -98,6 +98,7 @@ const (
 	ErrorPlaylistNotFound ErrorCode = "PLAYLIST_NOT_FOUND"
 	ErrorNoCaptions       ErrorCode = "NO_CAPTIONS"
 	ErrorAuthConfig       ErrorCode = "AUTH_CONFIG_ERROR"
+	ErrorAuthFailed       ErrorCode = "AUTH_FAILED"
 )
 
 // ErrorResponse represents an API error response.
