@@ -21,13 +21,20 @@ func NewRedis(redisURL string, log *zap.Logger) (*RedisCache, error) {
 		return nil, err
 	}
 
+	// Set timeouts - fail fast to avoid blocking deployment
+	opts.DialTimeout = 5 * time.Second   // Connection timeout
+	opts.ReadTimeout = 5 * time.Second   // Read timeout
+	opts.WriteTimeout = 5 * time.Second  // Write timeout
+	opts.PoolTimeout = 10 * time.Second  // Pool timeout
+
 	client := redis.NewClient(opts)
 
-	// Verify connection
+	// Verify connection with short timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		client.Close()
 		return nil, err
 	}
 

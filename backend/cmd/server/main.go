@@ -45,8 +45,9 @@ func main() {
 	
 
 	// Try to connect to database with retries
-	maxRetries := 5
-	retryDelay := 2 * time.Second
+	// Use longer delays for Railway internal network
+	maxRetries := 10
+	retryDelay := 5 * time.Second
 	for i := 0; i < maxRetries; i++ {
 		var err error
 		db, err = database.NewPostgres(cfg.DatabaseURL, log)
@@ -81,24 +82,31 @@ func main() {
 		}
 	}
 
-	// Try to connect to Redis with retries
-	for i := 0; i < maxRetries; i++ {
-		var err error
-		redisCache, err = cache.NewRedis(cfg.RedisURL, log)
-		if err == nil {
-			break
-		}
-		if i < maxRetries-1 {
-			log.Warn("Failed to connect to Redis, retrying...",
-				zap.Error(err),
-				zap.Int("attempt", i+1),
-				zap.Int("max_retries", maxRetries),
-			)
-			time.Sleep(retryDelay)
-		} else {
-			log.Error("Failed to connect to Redis after retries, continuing without Redis",
-				zap.Error(err),
-			)
+	// Try to connect to Redis (optional - skip if not configured or fails quickly)
+	if cfg.RedisURL == "" || cfg.RedisURL == "disabled" {
+		log.Info("Redis not configured, skipping cache")
+	} else {
+		// Only try 2 times with short delay to avoid blocking deployment
+		redisRetries := 2
+		redisRetryDelay := 3 * time.Second
+		for i := 0; i < redisRetries; i++ {
+			var err error
+			redisCache, err = cache.NewRedis(cfg.RedisURL, log)
+			if err == nil {
+				break
+			}
+			if i < redisRetries-1 {
+				log.Warn("Failed to connect to Redis, retrying...",
+					zap.Error(err),
+					zap.Int("attempt", i+1),
+					zap.Int("max_retries", redisRetries),
+				)
+				time.Sleep(redisRetryDelay)
+			} else {
+				log.Warn("Redis unavailable, continuing without cache (this is OK)",
+					zap.Error(err),
+				)
+			}
 		}
 	}
 
