@@ -33,7 +33,7 @@ function buildHeaders(customHeaders?: Record<string, string>): HeadersInit {
   });
 
   // 优先使用 Google OAuth token，如果不存在则使用通用 auth token
-  const googleAccessToken = localStorage.getItem('google_access_token');
+  const googleAccessToken = localStorage.getItem("google_access_token");
   const token = googleAccessToken || getAuthToken();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -107,10 +107,7 @@ class ApiClient {
   /**
    * 基础请求方法
    */
-  async request<T>(
-    endpoint: string,
-    options: RequestOptions = {}
-  ): Promise<T> {
+  async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const {
       method = "GET",
       body,
@@ -126,13 +123,9 @@ class ApiClient {
     }`;
 
     // Debug logging in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[API Client] ${method} ${url}`, body ? { body } : '');
+    if (process.env.NODE_ENV === "development") {
+      console.log(`[API Client] ${method} ${url}`, body ? { body } : "");
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:url',message:'API request URL built',data:{fullUrl:url,API_BASE_PATH,endpoint,method},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     // 构建请求配置
     const requestInit: RequestInit = {
@@ -149,14 +142,8 @@ class ApiClient {
     try {
       // 发送请求
       const response = await fetchWithTimeout(url, requestInit, timeout);
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:response',message:'API response received',data:{status:response.status,statusText:response.statusText,ok:response.ok,url:response.url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C,D'})}).catch(()=>{});
-      // #endregion
       return await handleResponse<T>(response);
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/a127609d-0110-4a4e-83ea-2be1242c90c3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'client.ts:request:error',message:'API request failed',data:{errorMessage:error instanceof Error ? error.message : String(error),errorName:error instanceof Error ? error.name : 'unknown'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,D'})}).catch(()=>{});
-      // #endregion
       // 处理错误
       if (error instanceof ApiError) {
         throw error;
@@ -183,28 +170,43 @@ class ApiClient {
   /**
    * POST 请求
    */
-  post<T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, "method">) {
+  post<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method">
+  ) {
     return this.request<T>(endpoint, { ...options, method: "POST", body });
   }
 
   /**
    * PUT 请求
    */
-  put<T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, "method">) {
+  put<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method">
+  ) {
     return this.request<T>(endpoint, { ...options, method: "PUT", body });
   }
 
   /**
    * PATCH 请求
    */
-  patch<T>(endpoint: string, body?: unknown, options?: Omit<RequestOptions, "method">) {
+  patch<T>(
+    endpoint: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, "method">
+  ) {
     return this.request<T>(endpoint, { ...options, method: "PATCH", body });
   }
 
   /**
    * DELETE 请求
    */
-  delete<T>(endpoint: string, options?: Omit<RequestOptions, "method" | "body">) {
+  delete<T>(
+    endpoint: string,
+    options?: Omit<RequestOptions, "method" | "body">
+  ) {
     return this.request<T>(endpoint, { ...options, method: "DELETE" });
   }
 }
@@ -214,4 +216,3 @@ export const apiClient = new ApiClient();
 
 // 导出类以便需要时可以创建新实例
 export default ApiClient;
-

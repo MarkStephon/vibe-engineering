@@ -1,3 +1,42 @@
+## 2026-01-13 - Debug: YouTube Captions API 401 Unauthorized
+
+**问题描述:** 用户访问字幕提取页面时返回 401 Unauthorized
+
+**调试结论:** 系统行为正确，非代码 Bug
+
+### 📝 分析
+
+YouTube Captions API 必须使用 OAuth 2.0 授权，前端需确保用户已完成 Google 授权流程。
+
+**代码流程确认:**
+1. `lib/api/client.ts:buildHeaders` 从 localStorage 读取 `google_access_token`
+2. 若 token 存在，自动添加 `Authorization: Bearer ${token}` header
+3. 用户需先访问 `/auth` 页面完成 Google OAuth 授权
+
+**关键代码逻辑 (已确认正常):**
+
+```typescript
+// lib/api/client.ts - 自动添加 Authorization header
+const googleAccessToken = localStorage.getItem('google_access_token');
+const token = googleAccessToken || getAuthToken();
+if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+}
+```
+
+### ✅ 确认事项
+
+- 前端 OAuth 回调正确存储 token 到 localStorage（`google_access_token`, `google_oauth_token`, `google_token_expiry`）
+- API client 自动附加 Authorization header
+- 401 错误时页面正确显示 "Authorization required. Please authenticate with Google."
+
+### 📁 文件涉及
+
+- `lib/api/client.ts` - buildHeaders 函数
+- `app/captions/page.tsx` - 字幕提取页面
+- `app/auth/google/callback/page.tsx` - OAuth 回调处理
+
+---
 ## 2026-01-09T16:18:19.648Z - Issue #171
 
 **UI Spec (1):**
