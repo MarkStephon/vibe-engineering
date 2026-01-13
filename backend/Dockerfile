@@ -21,7 +21,7 @@ COPY backend/ ./
 # https://docs.railway.com/guides/dockerfiles#cache-mounts
 RUN --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/go/pkg/mod,target=/go/pkg/mod \
     --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/root/.cache/go-build,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GO111MODULE=on go build -o /go/bin/server ./cmd/server/main.go
+    CGO_ENABLED=0 GO111MODULE=on go build -mod=mod -o /go/bin/server ./cmd/server/main.go
 
 FROM debian:bookworm-slim
 

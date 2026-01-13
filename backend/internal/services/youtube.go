@@ -596,13 +596,40 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 			captionBody, err := io.ReadAll(captionResp.Body)
 			captionResp.Body.Close()
 			if err == nil && len(captionBody) > 0 {
+				// #region agent log
+				logDebugYoutube("youtube.go:580", "Fetched caption content directly", map[string]interface{}{
+					"videoId": videoID,
+					"captionLength": len(captionBody),
+					"statusCode": captionResp.StatusCode,
+					"contentType": captionResp.Header.Get("Content-Type"),
+					"first500Chars": string(captionBody[:min(500, len(captionBody))]),
+				}, "C")
+				// #endregion
+
 				s.log.Debug("Fetched caption content",
 					zap.String("video_id", videoID),
 					zap.Int("caption_length", len(captionBody)),
 					zap.String("first_200_chars", string(captionBody[:min(200, len(captionBody))])),
+					zap.Int("status_code", captionResp.StatusCode),
+					zap.String("content_type", captionResp.Header.Get("Content-Type")),
 				)
 
 				captionText = s.parseYouTubeCaptions(string(captionBody))
+				
+				// #region agent log
+				logDebugYoutube("youtube.go:605", "Parsed caption result", map[string]interface{}{
+					"videoId": videoID,
+					"parsedTextLength": len(captionText),
+					"parsedTextEmpty": captionText == "",
+					"parsedTextPreview": func() string {
+						if len(captionText) > 200 {
+							return captionText[:200]
+						}
+						return captionText
+					}(),
+				}, "C")
+				// #endregion
+
 				if captionText != "" {
 					s.log.Info("Successfully parsed captions directly",
 						zap.String("video_id", videoID),
@@ -610,6 +637,20 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 					)
 					return captionText, nil
 				}
+			} else {
+				// #region agent log
+				logDebugYoutube("youtube.go:576", "Failed to fetch caption body", map[string]interface{}{
+					"videoId": videoID,
+					"hasError": err != nil,
+					"error": func() string {
+						if err != nil {
+							return err.Error()
+						}
+						return ""
+					}(),
+					"bodyLength": len(captionBody),
+				}, "C")
+				// #endregion
 			}
 		} else {
 			lastErr = err
@@ -674,17 +715,52 @@ func (s *YouTubeService) FetchYouTubeTranscript(ctx context.Context, videoID str
 		}
 
 		if len(captionBody) == 0 {
+			// #region agent log
+			logDebugYoutube("youtube.go:658", "Empty caption body", map[string]interface{}{
+				"videoId": videoID,
+				"lang": lang,
+			}, "C")
+			// #endregion
 			continue
 		}
+
+		// #region agent log
+		logDebugYoutube("youtube.go:662", "Fetched caption content with lang", map[string]interface{}{
+			"videoId": videoID,
+			"lang": lang,
+			"captionLength": len(captionBody),
+			"statusCode": captionResp.StatusCode,
+			"contentType": captionResp.Header.Get("Content-Type"),
+			"first500Chars": string(captionBody[:min(500, len(captionBody))]),
+		}, "C")
+		// #endregion
 
 		s.log.Debug("Fetched caption content",
 			zap.String("video_id", videoID),
 			zap.String("lang", lang),
 			zap.Int("caption_length", len(captionBody)),
+			zap.Int("status_code", captionResp.StatusCode),
+			zap.String("content_type", captionResp.Header.Get("Content-Type")),
 		)
 
 		// Parse the XML caption content
 		captionText = s.parseYouTubeCaptions(string(captionBody))
+		
+		// #region agent log
+		logDebugYoutube("youtube.go:687", "Parsed caption result with lang", map[string]interface{}{
+			"videoId": videoID,
+			"lang": lang,
+			"parsedTextLength": len(captionText),
+			"parsedTextEmpty": captionText == "",
+			"parsedTextPreview": func() string {
+				if len(captionText) > 200 {
+					return captionText[:200]
+				}
+				return captionText
+			}(),
+		}, "C")
+		// #endregion
+
 		if captionText != "" {
 			s.log.Info("Successfully parsed captions",
 				zap.String("video_id", videoID),
@@ -722,6 +798,13 @@ func min(a, b int) int {
 
 // parseYouTubeCaptions parses YouTube's XML caption format into readable text.
 func (s *YouTubeService) parseYouTubeCaptions(xmlContent string) string {
+	// #region agent log
+	logDebugYoutube("youtube.go:724", "parseYouTubeCaptions entry", map[string]interface{}{
+		"contentLength": len(xmlContent),
+		"contentPreview": xmlContent[:min(500, len(xmlContent))],
+	}, "C")
+	// #endregion
+
 	// YouTube captions can be in different formats:
 	// 1. XML format: <text start="0" dur="5.5">Caption text</text>
 	// 2. JSON format (sometimes returned)
@@ -730,50 +813,131 @@ func (s *YouTubeService) parseYouTubeCaptions(xmlContent string) string {
 	textPattern := regexp.MustCompile(`<text[^>]*start="([^"]*)"[^>]*>([\s\S]*?)</text>`)
 	matches := textPattern.FindAllStringSubmatch(xmlContent, -1)
 
+	// #region agent log
+	logDebugYoutube("youtube.go:730", "First pattern matches", map[string]interface{}{
+		"matchesCount": len(matches),
+	}, "C")
+	// #endregion
+
 	if len(matches) == 0 {
 		// Try alternative XML patterns
 		altPattern := regexp.MustCompile(`<p[^>]*t="(\d+)"[^>]*>([\s\S]*?)</p>`)
 		matches = altPattern.FindAllStringSubmatch(xmlContent, -1)
+		
+		// #region agent log
+		logDebugYoutube("youtube.go:735", "Alternative pattern matches", map[string]interface{}{
+			"matchesCount": len(matches),
+		}, "C")
+		// #endregion
 	}
 
 	if len(matches) == 0 {
-		s.log.Debug("Failed to parse caption XML",
-			zap.String("content_preview", xmlContent[:min(500, len(xmlContent))]),
-		)
-		return ""
-	}
+		// #region agent log
+		logDebugYoutube("youtube.go:840", "No matches found, trying more patterns", map[string]interface{}{
+			"contentPreview": xmlContent[:min(1000, len(xmlContent))],
+		}, "C")
+		// #endregion
 
-	var result strings.Builder
-	for _, match := range matches {
-		if len(match) >= 3 {
-			timestamp := match[1]
-			text := match[2]
+		// Try more patterns
+		// Pattern 2: <text> without start attribute but with dur
+		textPattern2 := regexp.MustCompile(`<text[^>]*dur="([^"]*)"[^>]*>([\s\S]*?)</text>`)
+		matches = textPattern2.FindAllStringSubmatch(xmlContent, -1)
+		
+		// #region agent log
+		logDebugYoutube("youtube.go:847", "Pattern 2 matches", map[string]interface{}{
+			"matchesCount": len(matches),
+		}, "C")
+		// #endregion
 
-			// Decode HTML entities
-			text = decodeHTMLEntities(text)
+		if len(matches) == 0 {
+			// Pattern 3: <text> with any attributes
+			textPattern3 := regexp.MustCompile(`<text[^>]*>([\s\S]*?)</text>`)
+			matches = textPattern3.FindAllStringSubmatch(xmlContent, -1)
+			
+			// #region agent log
+			logDebugYoutube("youtube.go:854", "Pattern 3 matches", map[string]interface{}{
+				"matchesCount": len(matches),
+			}, "C")
+			// #endregion
+		}
 
-			// Clean up whitespace
-			text = strings.TrimSpace(text)
-			text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
-
-			if text == "" {
-				continue
+		if len(matches) == 0 {
+			// Pattern 4: Try to extract all text content from XML (fallback)
+			// Remove all XML tags and extract text
+			textOnly := regexp.MustCompile(`<[^>]+>`).ReplaceAllString(xmlContent, "")
+			textOnly = strings.TrimSpace(textOnly)
+			if textOnly != "" {
+				// #region agent log
+				logDebugYoutube("youtube.go:864", "Using text-only fallback", map[string]interface{}{
+					"textLength": len(textOnly),
+					"textPreview": textOnly[:min(200, len(textOnly))],
+				}, "C")
+				// #endregion
+				return textOnly
 			}
 
-			// Convert timestamp to MM:SS format
-			seconds, _ := strconv.ParseFloat(timestamp, 64)
-			// Handle milliseconds format (t="1234" means 1.234 seconds in some formats)
-			if seconds > 10000 {
-				seconds = seconds / 1000
-			}
-			mins := int(seconds) / 60
-			secs := int(seconds) % 60
-
-			result.WriteString(fmt.Sprintf("[%02d:%02d] %s\n", mins, secs, text))
+			s.log.Debug("Failed to parse caption XML",
+				zap.String("content_preview", xmlContent[:min(500, len(xmlContent))]),
+			)
+			return ""
 		}
 	}
 
-	return result.String()
+	var result strings.Builder
+	for i, match := range matches {
+		// Handle different match patterns
+		var timestamp string
+		var text string
+		
+		if len(match) >= 3 {
+			timestamp = match[1]
+			text = match[2]
+		} else if len(match) >= 2 {
+			// Pattern 3: only text, no timestamp
+			text = match[1]
+			timestamp = fmt.Sprintf("%d", i*5) // Estimate 5 seconds per caption
+		} else {
+			continue
+		}
+
+		// Decode HTML entities
+		text = decodeHTMLEntities(text)
+
+		// Clean up whitespace
+		text = strings.TrimSpace(text)
+		text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+		if text == "" {
+			continue
+		}
+
+		// Convert timestamp to MM:SS format
+		seconds, err := strconv.ParseFloat(timestamp, 64)
+		if err != nil {
+			// If timestamp parsing fails, use index-based estimate
+			seconds = float64(i * 5)
+		}
+		// Handle milliseconds format (t="1234" means 1.234 seconds in some formats)
+		if seconds > 10000 {
+			seconds = seconds / 1000
+		}
+		mins := int(seconds) / 60
+		secs := int(seconds) % 60
+
+		result.WriteString(fmt.Sprintf("[%02d:%02d] %s\n", mins, secs, text))
+	}
+
+	parsedText := result.String()
+	
+	// #region agent log
+	logDebugYoutube("youtube.go:900", "parseYouTubeCaptions result", map[string]interface{}{
+		"matchesCount": len(matches),
+		"parsedTextLength": len(parsedText),
+		"parsedTextPreview": parsedText[:min(200, len(parsedText))],
+	}, "C")
+	// #endregion
+
+	return parsedText
 }
 
 // decodeHTMLEntities decodes common HTML entities in text.

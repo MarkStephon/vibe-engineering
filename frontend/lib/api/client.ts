@@ -156,6 +156,15 @@ function fetchWithTimeout(
       })
       .catch((error) => {
         clearTimeout(timeoutId);
+        // 如果错误是 AbortError，检查是否是超时导致的
+        if (error instanceof Error && error.name === "AbortError") {
+          // 检查超时定时器是否已触发
+          if (controller.signal.aborted) {
+            reject(new Error("Request timeout"));
+            return;
+          }
+        }
+        // 保留原始错误信息
         reject(error);
       });
   });
@@ -226,11 +235,52 @@ class ApiClient {
       if (error instanceof Error && error.name === "AbortError") {
         throw new ApiError(0, "Request aborted", undefined, "请求已取消");
       }
+      
+      // 提供更详细的错误信息
+      let errorMessage = "网络请求失败";
+      let errorDetails: Record<string, unknown> = {
+        url,
+        method,
+        apiBasePath: API_BASE_PATH,
+      };
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        errorDetails.errorName = error.name;
+        errorDetails.errorMessage = error.message;
+        errorDetails.errorStack = error.stack;
+        
+        // 检查是否是网络连接错误
+        if (error.message === "Failed to fetch" || error.message.includes("fetch")) {
+          errorMessage = `无法连接到服务器 (${url})。请检查：\n1. 后端服务是否正在运行\n2. API 地址是否正确 (${API_BASE_PATH})\n3. 网络连接是否正常`;
+          errorDetails.errorType = "NETWORK_ERROR";
+        } else if (error.message === "Request timeout") {
+          errorMessage = `请求超时 (${timeout}ms)。服务器响应时间过长，请稍后重试。`;
+          errorDetails.errorType = "TIMEOUT_ERROR";
+          errorDetails.timeout = timeout;
+        } else {
+          errorDetails.errorType = "UNKNOWN_ERROR";
+        }
+      } else {
+        errorDetails.errorType = "NON_ERROR_OBJECT";
+        errorDetails.errorValue = String(error);
+      }
+      
+      // 在开发环境下输出详细错误信息
+      if (process.env.NODE_ENV === "development") {
+        console.error("[API Client] Request failed:");
+        console.error("  URL:", url);
+        console.error("  Method:", method);
+        console.error("  API Base Path:", API_BASE_PATH);
+        console.error("  Error:", error);
+        console.error("  Error Details:", errorDetails);
+      }
+      
       throw new ApiError(
         0,
         "Network Error",
-        undefined,
-        error instanceof Error ? error.message : "网络请求失败"
+        errorDetails,
+        errorMessage
       );
     }
   }
