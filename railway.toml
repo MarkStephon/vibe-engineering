@@ -1,6 +1,6 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "backend/Dockerfile"
+dockerfilePath = "backend/Dockerfile.railway"
 buildContext = "backend"
 watchPatterns = ["backend/**"]
 
