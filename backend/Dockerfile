@@ -8,11 +8,15 @@ ARG CACHEBUST=20260113-141000
 
 WORKDIR /go/src/vibe-backend
 
-# Copy from current directory (works when build context is backend/)
-COPY . .
+# Copy go.mod and go.sum first (for better layer caching)
+# When build context is root (.), go.mod is at backend/go.mod
+COPY backend/go.mod backend/go.sum ./
 
 RUN --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/go/pkg/mod,target=/go/pkg/mod \
     go mod download
+
+# Copy the rest of the backend source code
+COPY backend/ ./
 
 # https://docs.railway.com/guides/dockerfiles#cache-mounts
 RUN --mount=type=cache,id=s/3a2cccef-6f6d-4cb8-aaaf-a49ddec22628-/go/pkg/mod,target=/go/pkg/mod \
