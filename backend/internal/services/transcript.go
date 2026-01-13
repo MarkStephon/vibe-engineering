@@ -235,7 +235,6 @@ func (s *TranscriptService) getSubtitlesMethod1(ctx context.Context, videoID str
 	// If json3 not found, yt-dlp might have downloaded VTT instead
 	// Try to parse VTT files as fallback within method1
 	// yt-dlp may save files as: videoID.NA.lang.vtt or videoID.lang.vtt
-	var vttErr error
 	var lastErr error
 	for _, lang := range languages {
 		// Try different filename patterns that yt-dlp might use
