@@ -1,116 +1,66 @@
 [
   {
-    "endpoint": "/api/v1/videos/metadata",
-    "method": "POST",
-    "description": "获取视频元数据（封面、标题、作者），用于进入详情页前的初步校验和骨架屏展示",
+    "endpoint": "/api/v1/insights",
+    "method": "GET",
+    "description": "获取当前用户的笔记列表，按时间维度（今日/昨日/更早）分组返回，支持搜索过滤。",
     "request": {
-      "url": "string"
+      "query": {
+        "limit": "number (default: 50)",
+        "offset": "number (default: 0)",
+        "search": "string (optional keyword)"
+      }
     },
     "response": {
-      "videoId": "string",
-      "title": "string",
-      "author": "string",
-      "thumbnailUrl": "string",
-      "duration": "number"
+      "data": {
+        "today": [
+          {
+            "id": "number",
+            "source_type": "youtube | twitter | podcast",
+            "title": "string",
+            "author": "string",
+            "thumbnail_url": "string",
+            "status": "pending | processing | completed | failed",
+            "created_at": "ISO8601 string"
+          }
+        ],
+        "yesterday": "Array<InsightItem>",
+        "previous": "Array<InsightItem>"
+      },
+      "total": "number"
+    },
+    "errors": [
+      {
+        "code": "UNAUTHORIZED",
+        "message": "User not logged in"
+      }
+    ]
+  },
+  {
+    "endpoint": "/api/v1/insights",
+    "method": "POST",
+    "description": "提交一个新的 URL 进行 AI 解析任务",
+    "request": {
+      "source_url": "string",
+      "target_lang": "string (e.g., 'zh', 'en')"
+    },
+    "response": {
+      "id": "number",
+      "status": "pending",
+      "message": "string"
     },
     "errors": [
       {
         "code": "INVALID_URL",
-        "message": "请输入有效的公开 YouTube 链接"
+        "message": "Unsupported or invalid URL format"
       },
       {
-        "code": "PRIVATE_VIDEO",
-        "message": "无法解析私有或受版权保护的视频"
-      }
-    ]
-  },
-  {
-    "endpoint": "/api/v1/videos/analyze",
-    "method": "POST",
-    "description": "提交解析任务，生成摘要、核心观点、章节和逐字稿",
-    "request": {
-      "videoId": "string",
-      "targetLanguage": "string"
-    },
-    "response": {
-      "jobId": "string",
-      "status": "pending | processing | completed | failed"
-    },
-    "errors": [
-      {
-        "code": "VIDEO_TOO_LONG",
-        "message": "视频过长，暂不支持解析"
+        "code": "RATE_LIMIT_EXCEEDED",
+        "message": "Too many requests"
       },
       {
-        "code": "NO_AUDIO",
-        "message": "该视频无有效音频轨道，无法解析"
+        "code": "INTERNAL_ERROR",
+        "message": "Failed to initialize parsing task"
       }
     ]
-  },
-  {
-    "endpoint": "/api/v1/videos/result/{jobId}",
-    "method": "GET",
-    "description": "轮询或获取解析后的结构化内容",
-    "request": null,
-    "response": {
-      "status": "completed",
-      "summary": "string",
-      "keyPoints": [
-        "string"
-      ],
-      "chapters": [
-        {
-          "title": "string",
-          "timestamp": "string",
-          "seconds": "number"
-        }
-      ],
-      "transcription": [
-        {
-          "text": "string",
-          "timestamp": "string",
-          "seconds": "number"
-        }
-      ]
-    },
-    "errors": [
-      {
-        "code": "TIMEOUT",
-        "message": "服务器繁忙，请稍后重试"
-      },
-      {
-        "code": "ANALYSIS_FAILED",
-        "message": "解析失败，请重试"
-      }
-    ]
-  },
-  {
-    "endpoint": "/api/v1/history",
-    "method": "GET",
-    "description": "获取首页最近解析记录卡片流",
-    "request": null,
-    "response": {
-      "items": [
-        {
-          "videoId": "string",
-          "title": "string",
-          "thumbnailUrl": "string",
-          "createdAt": "string"
-        }
-      ]
-    }
-  },
-  {
-    "endpoint": "/api/v1/videos/export",
-    "method": "POST",
-    "description": "导出解析内容为 PDF 或 Markdown",
-    "request": {
-      "videoId": "string",
-      "format": "pdf | markdown"
-    },
-    "response": {
-      "downloadUrl": "string",
-      "fileName": "string"
-    }
   }
 ]
