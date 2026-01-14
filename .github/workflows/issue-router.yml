@@ -68,6 +68,14 @@ jobs:
               const commandMatch = body.match(new RegExp(`${matched.trigger.replace('-', '\\-')}\\s+([^\\s]+)`));
               const commandArgs = commandMatch ? commandMatch[1] : '';
 
+              // 清理父 issue 标题，移除已有的前缀和后缀
+              let cleanTitle = issue.title
+                // 移除开头的 agent 类型标签，如 [BE], [FE], [UI], [BE+FE] 等
+                .replace(/^\s*(\[[A-Z+]+\]\s*)+/g, '')
+                // 移除结尾的 "(子任务 from #xxx)" 后缀
+                .replace(/\s*\(子任务 from #\d+\)\s*$/g, '')
+                .trim();
+
               const newIssueBody = [
                 `## 🔗 关联父 Issue`,
                 ``,
@@ -95,7 +103,7 @@ jobs:
               const { data: newIssue } = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `[${agentType}] ${issue.title} (子任务 from #${issue.number})`,
+                title: `[${agentType}] ${cleanTitle} (from #${issue.number})`,
                 body: newIssueBody,
                 labels: [matched.label, '🤖 ai-processing', 'sub-issue']
               });
