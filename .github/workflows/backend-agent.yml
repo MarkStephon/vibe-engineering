@@ -35,15 +35,15 @@ jobs:
           script: |
             const fs = require("fs");
             const path = require("path");
-            
+
             const issue = context.payload.issue;
             const comment = context.payload.comment;
             const commentBody = comment.body;
-            
+
             console.log("=".repeat(80));
             console.log("🔍 BACKEND AGENT - 解析命令");
             console.log("=".repeat(80));
-            
+
             // 1. 提取 UI Spec URL（支持 issue 和 comment）
             const urlPattern = /https:\/\/github\.com\/[^\s\)]+\/issues\/\d+(?:#(?:issuecomment-|issue-)\d+)?/g;
             const urls = commentBody.match(urlPattern) || [];
@@ -56,20 +56,21 @@ jobs:
               console.log("⚠️ 未提供 URL，将使用当前 Issue 内容作为需求");
               useCurrentIssue = true;
             }
-            
+
             // 2. 提取用户额外指令
             let userInstructions = commentBody
               .replace(/\/agent-be\s*/, "")
               .trim();
-            
+
             urls.forEach(url => {
               userInstructions = userInstructions.replace(url, "").trim();
             });
-            
+
             console.log("用户指令:", userInstructions || "(无)");
-            
+
             // 3. 获取 UI Spec 内容
             const uiSpecs = [];
+            const specUrls = [];
 
             if (useCurrentIssue) {
               // 使用当前 Issue 的内容作为需求
@@ -77,6 +78,7 @@ jobs:
               const title = issue.title;
               const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/${issue.number}`;
               uiSpecs.push({ url, content, title });
+              specUrls.push(url);
               console.log(`✅ 使用当前 Issue: ${title}`);
             } else {
               // 从提供的 URL 获取内容
@@ -106,6 +108,7 @@ jobs:
                   }
 
                   uiSpecs.push({ url, content, title });
+                  specUrls.push(url);
                   console.log(`✅ 获取 UI Spec: ${title}`);
                 } catch (error) {
                   console.error(`❌ 获取失败: ${url}`);
@@ -117,17 +120,17 @@ jobs:
             const combinedUISpec = uiSpecs.map((spec, idx) =>
               `## UI Spec ${idx + 1}: ${spec.title}\n\n${spec.content}`
             ).join("\n\n---\n\n");
-            
+
             // 4. 生成 API Contract（使用 AI 推导）
             const contractPrompt = `你是后端 API 设计专家。
 
             基于以下 UI Spec，推导最小 API 契约。
-            
+
             ${userInstructions ? `用户要求:\n${userInstructions}\n\n` : ""}
-            
+
             UI Spec:
             ${combinedUISpec}
-            
+
             返回 JSON 数组:
             [
               {
@@ -139,9 +142,9 @@ jobs:
                 "errors": [{"code": "CODE", "message": "msg"}]
               }
             ]
-            
+
             只返回 JSON。`;
-            
+
             const contractRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
               method: "POST",
               headers: {
@@ -154,19 +157,19 @@ jobs:
                 temperature: 0.3
               })
             });
-            
+
             const contractData = await contractRes.json();
             let apiContract = contractData.choices?.[0]?.message?.content || "[]";
-            
+
             // 提取 JSON
             const jsonMatch = apiContract.match(/```(?:json)?\s*([\s\S]*?)```/);
             if (jsonMatch) apiContract = jsonMatch[1];
-            
+
             apiContract = JSON.parse(apiContract);
             if (!Array.isArray(apiContract)) apiContract = [apiContract];
-            
+
             console.log(`✅ API Contract: ${apiContract.length} 个接口`);
-            
+
             // 5. 读取项目文件（通用版本）
             const systemFiles = [
               "backend/go.mod",
@@ -178,7 +181,7 @@ jobs:
               "backend/internal/handlers/video.go",
               "backend/internal/repository/video.go"
             ];
-            
+
             const projectContext = {};
             for (const filePath of systemFiles) {
               try {
@@ -191,74 +194,63 @@ jobs:
                 console.log(`⚠️ 跳过: ${filePath}`);
               }
             }
-            
+
             const projectContextText = Object.entries(projectContext)
               .map(([path, content]) => `## ${path}\n\`\`\`go\n${content}\n\`\`\``)
               .join("\n\n");
-            
-            // 6. 构建 Prompt
-            const branchName = `agent-be-${issue.number}-${Date.now()}`;
-            
+
+            // 6. 发布 API Contract 分析结果
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                "🤖 **Backend Agent 启动**",
+                "",
+                `**UI Spec 来源:**`,
+                specUrls.map((url, idx) => `${idx + 1}. ${url}`).join("\n"),
+                "",
+                userInstructions ? `**用户指令:** ${userInstructions}\n` : "",
+                `**API Contract (${apiContract.length} 个接口):**`,
+                apiContract.map((api, i) =>
+                  `${i + 1}. \`${api.method} ${api.endpoint}\` - ${api.description || '无描述'}`
+                ).join("\n"),
+                "",
+                "_Claude Code Action 正在生成代码..._"
+              ].join("\n")
+            });
+
+            // 7. 构建 Prompt（不指定分支名，让 claude-code-action 自己创建）
             const prompt = `你是后端代码生成专家。
 
             ## 任务
             基于 API Contract 实现后端代码。
-            
+
             ## API Contract
             ${JSON.stringify(apiContract, null, 2)}
-            
+
             ${userInstructions ? `## 用户要求\n${userInstructions}\n` : ""}
-            
+
             ## 项目约束
             ${projectContextText || "无现有代码参考"}
-            
+
             ## 要求
             - 遵循现有代码风格
             - 所有文件在 backend/ 目录下
             - 使用 Go 标准库和项目已有依赖
             - 包含错误处理
             - 添加日志记录
-            - 创建分支: ${branchName}
-            
+
             请生成完整的后端实现。`;
-            
+
             core.setOutput("prompt_content", prompt);
-            core.setOutput("branch_name", branchName);
             core.setOutput("api_contract", JSON.stringify(apiContract));
-            core.setOutput("spec_urls", urls.join(", "));
-            
+            core.setOutput("spec_urls", specUrls.join(", "));
+
             console.log("✅ 上下文准备完成");
 
-      # ========== 步骤 2：创建进度评论 ==========
-      - name: Create Progress Comment
-        id: progress
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: comment } = await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: [
-                "🤖 **Backend Agent 工作中**",
-                "",
-                `📋 UI Spec: ${{ steps.prepare.outputs.spec_urls }}`,
-                `🌿 分支: \`${{ steps.prepare.outputs.branch_name }}\``,
-                "",
-                "**进度:**",
-                "- [x] 解析 UI Spec",
-                "- [x] 生成 API Contract",
-                "- [ ] 生成代码",
-                "- [ ] 运行测试",
-                "- [ ] 创建 PR",
-                "",
-                "_实时更新中..._"
-              ].join("\n")
-            });
-            
-            core.setOutput("comment_id", comment.id);
-
-      # ========== 步骤 3：执行 Claude Code Action ==========
+      # ========== 步骤 2：执行 Claude Code Action ==========
+      # claude-code-action 会自动：创建分支、生成代码、发布进度评论、提供 PR 链接
       - name: Run Claude Code Action
         uses: anthropics/claude-code-action@v1
         env:
@@ -272,182 +264,26 @@ jobs:
             --model anthropic/claude-sonnet-4.5
             --max-turns 20
 
-      # ========== 步骤 4：更新进度 ==========
-      - name: Update Progress
-        if: always()
+      # ========== 步骤 3：成功后更新标签 ==========
+      - name: Update Labels on Success
+        if: success()
         uses: actions/github-script@v7
         with:
           script: |
-            const { execSync } = require('child_process');
-            let hasChanges = false;
-            try {
-              const status = execSync('git status --porcelain', { encoding: 'utf8' });
-              hasChanges = status.trim().length > 0;
-            } catch (e) {}
-            
-            await github.rest.issues.updateComment({
+            // 更新标签
+            await github.rest.issues.removeLabel({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              comment_id: ${{ steps.progress.outputs.comment_id }},
-              body: [
-                "🤖 **Backend Agent 工作中**",
-                "",
-                `📋 UI Spec: ${{ steps.prepare.outputs.spec_urls }}`,
-                `🌿 分支: \`${{ steps.prepare.outputs.branch_name }}\``,
-                "",
-                "**进度:**",
-                "- [x] 解析 UI Spec",
-                "- [x] 生成 API Contract",
-                hasChanges ? "- [x] 生成代码" : "- [ ] 生成代码（无变更）",
-                "- [ ] 运行测试",
-                "- [ ] 创建 PR",
-                "",
-                hasChanges ? "_正在测试..._" : "_无代码变更_"
-              ].join("\n")
+              issue_number: context.issue.number,
+              name: '🤖 ai-processing'
+            }).catch(() => {});
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['✅ ai-completed']
             });
-
-      # ========== 步骤 5：测试 ==========
-      - name: Test Backend Code
-        if: success()
-        continue-on-error: true
-        run: |
-          if [ -d "backend" ]; then
-            echo "Running tests..."
-            go test -C backend ./... -v 2>&1 | tee test-output.txt || true
-            
-            if [ ${PIPESTATUS[0]} -eq 0 ]; then
-              echo "TEST_RESULT=passed" >> $GITHUB_ENV
-            else
-              echo "TEST_RESULT=failed" >> $GITHUB_ENV
-            fi
-            
-            TEST_OUTPUT=$(cat test-output.txt | tail -50)
-            echo "TEST_OUTPUT<<EOF" >> $GITHUB_ENV
-            echo "$TEST_OUTPUT" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "TEST_RESULT=skipped" >> $GITHUB_ENV
-          fi
-
-      # ========== 步骤 6：创建 PR ==========
-      - name: Create Pull Request
-        if: env.TEST_RESULT != 'skipped'
-        uses: actions/github-script@v7
-        env:
-          BRANCH_NAME: ${{ steps.prepare.outputs.branch_name }}
-          API_CONTRACT: ${{ steps.prepare.outputs.api_contract }}
-          SPEC_URLS: ${{ steps.prepare.outputs.spec_urls }}
-          TEST_RESULT: ${{ env.TEST_RESULT }}
-          TEST_OUTPUT: ${{ env.TEST_OUTPUT }}
-        with:
-          script: |
-            const { execSync } = require('child_process');
-            
-            // 提交并推送
-            try {
-              execSync('git add .');
-              execSync(`git commit -m "feat: backend implementation (#${context.issue.number})"`);
-              execSync(`git push origin ${process.env.BRANCH_NAME}`);
-            } catch (e) {
-              console.log("Commit/push error:", e.message);
-            }
-            
-            // 创建 PR
-            try {
-              const apiContract = JSON.parse(process.env.API_CONTRACT);
-              const testStatus = process.env.TEST_RESULT === 'passed' ? '✅ 通过' : 
-                                 process.env.TEST_RESULT === 'failed' ? '❌ 失败' : '⏭️ 跳过';
-              
-              const pr = await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `Backend: API Implementation (#${context.issue.number})`,
-                head: process.env.BRANCH_NAME,
-                base: "main",
-                body: [
-                  "🤖 **Backend Agent 自动生成**",
-                  "",
-                  `📋 UI Spec: ${process.env.SPEC_URLS}`,
-                  "",
-                  "### API Contract",
-                  "```json",
-                  JSON.stringify(apiContract, null, 2),
-                  "```",
-                  "",
-                  `### 测试结果: ${testStatus}`,
-                  process.env.TEST_RESULT === 'failed' ? [
-                    "",
-                    "<details>",
-                    "<summary>测试输出</summary>",
-                    "",
-                    "```",
-                    process.env.TEST_OUTPUT,
-                    "```",
-                    "</details>"
-                  ].join("\n") : "",
-                  "",
-                  "---",
-                  `Related to #${context.issue.number}`,
-                  "",
-                  "⚠️ **注意**: 此 PR 不会自动关闭 issue，请在前后端都完成后手动关闭"
-                ].join("\n")
-              });
-              
-              core.setOutput("pr_url", pr.data.html_url);
-              
-              // 最终更新
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: ${{ steps.progress.outputs.comment_id }},
-                body: [
-                  "✅ **Backend Agent 完成**",
-                  "",
-                  `📋 UI Spec: ${process.env.SPEC_URLS}`,
-                  `🌿 分支: \`${process.env.BRANCH_NAME}\``,
-                  `🔗 PR: ${pr.data.html_url}`,
-                  "",
-                  "**结果:**",
-                  "- [x] 解析 UI Spec",
-                  "- [x] 生成 API Contract",
-                  "- [x] 生成代码",
-                  `- [x] 测试 ${testStatus}`,
-                  "- [x] 创建 PR",
-                  "",
-                  `### API Contract (${apiContract.length} 个接口)`,
-                  apiContract.map((api, i) => 
-                    `${i + 1}. \`${api.method} ${api.endpoint}\` - ${api.description || '无描述'}`
-                  ).join("\n"),
-                  "",
-                  "🎉 **请 review PR！**"
-                ].join("\n")
-              });
-              
-              // 更新标签
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                name: '🤖 ai-processing'
-              }).catch(() => {});
-              
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: ['✅ ai-completed']
-              });
-              
-            } catch (e) {
-              console.error("PR creation failed:", e);
-              
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `❌ **PR 创建失败**\n\n错误: ${e.message}\n\n分支已推送: \`${process.env.BRANCH_NAME}\``
-              });
-            }
 
       # ========== 失败处理 ==========
       - name: Handle Failure
@@ -455,10 +291,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            await github.rest.issues.updateComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              comment_id: ${{ steps.progress.outputs.comment_id }},
+              issue_number: context.issue.number,
               body: [
                 "❌ **Backend Agent 失败**",
                 "",
@@ -474,14 +310,14 @@ jobs:
                 "建议: 提供更详细的 UI Spec 或手动指定 API 接口。"
               ].join("\n")
             });
-            
+
             await github.rest.issues.removeLabel({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               name: '🤖 ai-processing'
             }).catch(() => {});
-            
+
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
