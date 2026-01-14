@@ -1513,3 +1513,47 @@ jobs:
             }
 
             await runFrontendAgent();
+
+      - name: Update Issue Checklist
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        with:
+          script: |
+            const issue_number = Number(process.env.ISSUE_NUMBER);
+            const { owner, repo } = context.repo;
+
+            try {
+              // 获取 Issue 内容
+              const { data: issue } = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number
+              });
+
+              let body = issue.body || '';
+
+              // 查找前端相关的 checklist 项并更新
+              // 匹配模式: 在 "### 前端" 或类似标题下的 [ ] 项
+              const frontendSectionRegex = /(###?\s*(?:前端|Frontend|FE)[^\n]*\n)([\s\S]*?)(?=\n###?\s|\n##?\s|$)/gi;
+
+              body = body.replace(frontendSectionRegex, (match, header, content) => {
+                // 将该 section 内的所有 [ ] 替换为 [x]
+                const updatedContent = content.replace(/\[\s*\]/g, '[x]');
+                return header + updatedContent;
+              });
+
+              // 更新 Issue body
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number,
+                body
+              });
+
+              console.log(`✅ 已更新 Issue #${issue_number} 的前端 checklist`);
+            } catch (error) {
+              console.error(`⚠️ 更新 checklist 失败: ${error.message}`);
+              // 不阻止 workflow 完成
+            }

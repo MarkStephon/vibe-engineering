@@ -1,0 +1,101 @@
+name: Auto Trigger Frontend After Backend Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  trigger-frontend:
+    # 仅在 PR 合并（非关闭）且是后端 Agent 创建的 PR 时触发
+    if: |
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.title, 'Backend:')
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Extract Issue Number and Trigger Frontend
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prTitle = context.payload.pull_request.title;
+            const prBody = context.payload.pull_request.body || '';
+
+            console.log("=".repeat(80));
+            console.log("🔄 AUTO TRIGGER FRONTEND");
+            console.log("=".repeat(80));
+            console.log(`PR Title: ${prTitle}`);
+
+            // 从 PR 标题中提取 Issue 编号
+            // 格式: "Backend: xxx implementation (#123)"
+            const issueMatch = prTitle.match(/#(\d+)/);
+            if (!issueMatch) {
+              console.log("⚠️ 未找到关联的 Issue 编号，跳过");
+              return;
+            }
+
+            const issueNumber = parseInt(issueMatch[1]);
+            console.log(`📋 关联 Issue: #${issueNumber}`);
+
+            // 获取 Issue 信息
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber
+            });
+
+            // 检查 Issue 标题或内容是否包含前端需求
+            const hasFrontendTask =
+              issue.title.includes('[FE]') ||
+              issue.title.includes('前端') ||
+              issue.title.includes('Frontend') ||
+              issue.body?.includes('### 前端') ||
+              issue.body?.includes('### Frontend') ||
+              issue.body?.includes('## 🖥 前端') ||
+              issue.body?.includes('## 前端实现');
+
+            if (!hasFrontendTask) {
+              console.log("⚠️ Issue 不包含前端任务，跳过");
+
+              // 添加完成评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: [
+                  "✅ **后端 PR 已合并**",
+                  "",
+                  `🔗 ${context.payload.pull_request.html_url}`,
+                  "",
+                  "未检测到前端任务，后端开发完成！"
+                ].join("\n")
+              });
+              return;
+            }
+
+            console.log("✅ 检测到前端任务，准备自动触发");
+
+            // 在 Issue 中添加评论触发前端 Agent
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                "✅ **后端 PR 已合并**",
+                "",
+                `🔗 ${context.payload.pull_request.html_url}`,
+                "",
+                "---",
+                "",
+                "🤖 **自动触发前端开发...**",
+                "",
+                "/agent-fe",
+                "",
+                "> 💡 后端开发完成后自动触发前端 Agent"
+              ].join("\n")
+            });
+
+            console.log(`✅ 已在 Issue #${issueNumber} 中触发前端 Agent`);
