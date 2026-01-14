@@ -42,7 +42,17 @@
       "Bash(railway deploy --help:*)",
       "Bash(railway variables --help:*)",
       "Bash(railway cache clear:*)",
-      "Bash(railway:*)"
+      "Bash(railway:*)",
+      "Bash(wc:*)",
+      "Bash(git -C /Users/xiaozihao/Documents/01_Projects/Work_Code/work/Team_AI/vibe-engineering-playbook log --oneline)",
+      "Bash(xargs:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(docker run:*)",
+      "Bash(gh issue:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)"
     ]
   }
 }
