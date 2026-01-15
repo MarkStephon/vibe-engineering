@@ -25,7 +25,53 @@ jobs:
           git config user.name "ai-frontend-agent"
           git config user.email "agent@github-actions.bot"
 
-      # ========== 步骤 1：解析命令和准备上下文 ==========
+      # ========== 步骤 1：检测功能分支 ==========
+      - name: Detect Feature Branch
+        id: feature
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+
+            // 检查当前 issue 是否有 feature:xxx 标签
+            let featureLabel = labels.find(l => l.startsWith('feature:'));
+
+            // 如果没有，检查 issue body 中引用的父 issue
+            if (!featureLabel && issue.body) {
+              const parentMatch = issue.body.match(/(?:part of|parent|belongs to|see)\s*#(\d+)/i);
+              if (parentMatch) {
+                const parentIssueNumber = parseInt(parentMatch[1]);
+                try {
+                  const { data: parentIssue } = await github.rest.issues.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: parentIssueNumber
+                  });
+                  featureLabel = parentIssue.labels
+                    .map(l => l.name)
+                    .find(l => l.startsWith('feature:'));
+                  if (featureLabel) {
+                    console.log(`📌 从父 Issue #${parentIssueNumber} 继承 feature label: ${featureLabel}`);
+                  }
+                } catch (e) {
+                  console.log(`⚠️ 无法获取父 Issue #${parentIssueNumber}`);
+                }
+              }
+            }
+
+            if (featureLabel) {
+              const branchName = featureLabel.replace(':', '/');
+              console.log(`🌿 目标分支: ${branchName}`);
+              core.setOutput("branch", branchName);
+              core.setOutput("has_feature", "true");
+            } else {
+              console.log("📌 无功能分支，PR 将提交到 main");
+              core.setOutput("branch", "main");
+              core.setOutput("has_feature", "false");
+            }
+
+      # ========== 步骤 2：解析命令和准备上下文 ==========
       - name: Parse Command & Prepare Context
         id: prepare
         uses: actions/github-script@v7
@@ -220,7 +266,7 @@ jobs:
 
             console.log("✅ 上下文准备完成");
 
-      # ========== 步骤 2：执行 Claude Code Action ==========
+      # ========== 步骤 3：执行 Claude Code Action ==========
       # claude-code-action 会自动：创建分支、生成代码、发布进度评论、提供 PR 链接
       - name: Run Claude Code Action
         uses: anthropics/claude-code-action@v1
@@ -231,11 +277,12 @@ jobs:
           github_token: ${{ github.token }}
           track_progress: true
           prompt: ${{ steps.prepare.outputs.prompt_content }}
+          base_branch: ${{ steps.feature.outputs.branch }}
           claude_args: |
             --model anthropic/claude-sonnet-4.5
             --max-turns 60
 
-      # ========== 步骤 3：成功后更新标签 ==========
+      # ========== 步骤 4：成功后更新标签 ==========
       - name: Update Labels on Success
         if: success()
         uses: actions/github-script@v7

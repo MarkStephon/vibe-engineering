@@ -1,0 +1,323 @@
+name: Feature Branch Manager
+
+# 功能分支管理器
+# 1. 当 issue 被打上 `feature:xxx` label 时，自动创建 `feature/xxx` 分支
+# 2. 提供 `/sync` 命令同步 main 到功能分支
+# 3. 提供 `/merge-to-main` 命令创建合并到 main 的 PR
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  # ============================================================
+  # Job 1: 自动创建功能分支
+  # 触发条件：issue 被打上 `feature:xxx` label
+  # ============================================================
+  create-feature-branch:
+    if: |
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      startsWith(github.event.label.name, 'feature:')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Feature Branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = context.payload.label.name;
+            const issue = context.payload.issue;
+
+            // 从 label 提取分支名: feature:insightflow -> feature/insightflow
+            const branchName = label.replace(':', '/');
+
+            console.log(`📌 创建功能分支: ${branchName}`);
+            console.log(`📋 关联 Issue: #${issue.number} - ${issue.title}`);
+
+            // 检查分支是否已存在
+            try {
+              await github.rest.repos.getBranch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: branchName
+              });
+
+              console.log(`⚠️ 分支已存在: ${branchName}`);
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `⚠️ 功能分支 \`${branchName}\` 已存在。\n\n子 Issue 的 PR 将自动合并到此分支。`
+              });
+
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
+            // 获取 main 分支的最新 commit SHA
+            const { data: mainRef } = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main'
+            });
+
+            // 创建新分支
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branchName}`,
+              sha: mainRef.object.sha
+            });
+
+            console.log(`✅ 分支创建成功: ${branchName}`);
+
+            // 在 issue 上发布评论
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                `🌿 **功能分支已创建**: \`${branchName}\``,
+                "",
+                "## 使用说明",
+                "",
+                "### 子 Issue PR 自动合并",
+                `所有带有 \`${label}\` 标签的子 Issue，其 PR 将自动合并到 \`${branchName}\` 分支。`,
+                "",
+                "### 可用命令",
+                "| 命令 | 说明 |",
+                "|------|------|",
+                `| \`/sync\` | 将 main 分支最新代码同步到 \`${branchName}\` |`,
+                `| \`/merge-to-main\` | 创建 PR 将 \`${branchName}\` 合并回 main |`,
+                "",
+                "### 部署环境",
+                `- **Vercel**: 可在 Dashboard 将 Preview 环境指向 \`${branchName}\``,
+                `- **Railway**: 可在 Dashboard 切换环境分支到 \`${branchName}\``,
+                "",
+                "---",
+                `_基于 main @ \`${mainRef.object.sha.substring(0, 7)}\` 创建_`
+              ].join("\n")
+            });
+
+  # ============================================================
+  # Job 2: /sync 命令 - 同步 main 到功能分支
+  # ============================================================
+  sync-from-main:
+    if: |
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/sync')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Check Feature Label
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+
+            const featureLabel = labels.find(l => l.startsWith('feature:'));
+            if (!featureLabel) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "❌ 此 Issue 没有 `feature:xxx` 标签，无法执行 `/sync` 命令。"
+              });
+              core.setFailed("No feature label found");
+              return;
+            }
+
+            const branchName = featureLabel.replace(':', '/');
+            core.setOutput("branch", branchName);
+            core.setOutput("label", featureLabel);
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.check.outputs.branch }}
+
+      - name: Sync from Main
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="${{ steps.check.outputs.branch }}"
+
+          echo "🔄 同步 main 到 $BRANCH..."
+
+          git fetch origin main
+
+          # 尝试合并 main
+          if git merge origin/main --no-edit; then
+            git push origin "$BRANCH"
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ 同步成功"
+          else
+            git merge --abort
+            echo "status=conflict" >> $GITHUB_OUTPUT
+            echo "❌ 存在冲突"
+          fi
+
+      - name: Report Result
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = "${{ steps.sync.outputs.status }}";
+            const branch = "${{ steps.check.outputs.branch }}";
+
+            if (status === "success") {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `✅ **同步成功**\n\n\`main\` 分支已合并到 \`${branch}\`。`
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: [
+                  `❌ **同步失败 - 存在冲突**`,
+                  "",
+                  `\`main\` 分支与 \`${branch}\` 存在冲突，需要手动解决。`,
+                  "",
+                  "```bash",
+                  `git checkout ${branch}`,
+                  "git fetch origin main",
+                  "git merge origin/main",
+                  "# 解决冲突后",
+                  "git add .",
+                  "git commit",
+                  `git push origin ${branch}`,
+                  "```"
+                ].join("\n")
+              });
+            }
+
+  # ============================================================
+  # Job 3: /merge-to-main 命令 - 创建合并到 main 的 PR
+  # ============================================================
+  merge-to-main:
+    if: |
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/merge-to-main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Check Feature Label
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+
+            const featureLabel = labels.find(l => l.startsWith('feature:'));
+            if (!featureLabel) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "❌ 此 Issue 没有 `feature:xxx` 标签，无法执行 `/merge-to-main` 命令。"
+              });
+              core.setFailed("No feature label found");
+              return;
+            }
+
+            const branchName = featureLabel.replace(':', '/');
+            core.setOutput("branch", branchName);
+            core.setOutput("label", featureLabel);
+            core.setOutput("issue_number", issue.number);
+            core.setOutput("issue_title", issue.title);
+
+      - name: Create PR to Main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = "${{ steps.check.outputs.branch }}";
+            const issueNumber = ${{ steps.check.outputs.issue_number }};
+            const issueTitle = `${{ steps.check.outputs.issue_title }}`;
+
+            // 检查是否已有 PR
+            const { data: existingPRs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              base: 'main',
+              state: 'open'
+            });
+
+            if (existingPRs.length > 0) {
+              const pr = existingPRs[0];
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `⚠️ 已存在合并到 main 的 PR: #${pr.number}\n\n${pr.html_url}`
+              });
+              return;
+            }
+
+            // 创建 PR
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚀 [Feature] ${issueTitle}`,
+              head: branch,
+              base: 'main',
+              body: [
+                `## 功能合并`,
+                "",
+                `关联 Issue: #${issueNumber}`,
+                "",
+                `此 PR 将 \`${branch}\` 分支的所有更改合并到 \`main\`。`,
+                "",
+                "### Checklist",
+                "- [ ] 所有子 Issue 已完成",
+                "- [ ] 代码已通过 review",
+                "- [ ] 测试通过",
+                "",
+                "---",
+                "_由 Feature Branch Manager 自动创建_"
+              ].join("\n")
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: [
+                `🚀 **合并 PR 已创建**: #${pr.number}`,
+                "",
+                pr.html_url,
+                "",
+                "合并此 PR 后：",
+                "- Railway 生产环境将自动更新",
+                "- Vercel 生产环境将自动更新"
+              ].join("\n")
+            });
