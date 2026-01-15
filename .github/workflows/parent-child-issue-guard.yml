@@ -1,0 +1,299 @@
+name: Parent-Child Issue Guard
+
+on:
+  issues:
+    types: [closed]
+  issue_comment:
+    types: [created]
+
+jobs:
+  check-child-issues:
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check if parent issue has unclosed children
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+
+            // 检查是否是父 Issue（包含子 Issue 列表）
+            if (!body.includes('子 Issue') && !body.includes('child issue') && !body.includes('子Issue')) {
+              console.log('Not a parent issue, skipping');
+              return;
+            }
+
+            // 解析子 Issue 引用
+            const issueRefRegex = /#(\d+)/g;
+            const matches = [...body.matchAll(issueRefRegex)];
+
+            if (matches.length === 0) {
+              console.log('No child issues found in body');
+              return;
+            }
+
+            // 去重并排除自身
+            const childIssueNumbers = [...new Set(matches.map(m => parseInt(m[1])))];
+            const filteredChildren = childIssueNumbers.filter(n => n !== issue.number);
+
+            if (filteredChildren.length === 0) {
+              console.log('No child issues to check');
+              return;
+            }
+
+            console.log(`Found ${filteredChildren.length} potential child issues: ${filteredChildren.join(', ')}`);
+
+            // 检查每个子 Issue 的状态
+            const openChildren = [];
+            const closedChildren = [];
+
+            for (const num of filteredChildren) {
+              try {
+                const { data: childIssue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num
+                });
+
+                if (childIssue.state === 'open') {
+                  openChildren.push({ number: num, title: childIssue.title });
+                } else {
+                  closedChildren.push({ number: num, title: childIssue.title });
+                }
+              } catch (e) {
+                console.log(`Could not fetch issue #${num}: ${e.message}`);
+              }
+            }
+
+            console.log(`Open children: ${openChildren.length}, Closed children: ${closedChildren.length}`);
+
+            // 如果有未关闭的子 Issue，重新打开父 Issue 并警告
+            if (openChildren.length > 0) {
+              // 重新打开父 Issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'open'
+              });
+
+              // 生成状态表格
+              const allChildren = [...closedChildren.map(c => ({ ...c, status: '✅ Closed' })),
+                                   ...openChildren.map(c => ({ ...c, status: '❌ Open' }))];
+              allChildren.sort((a, b) => a.number - b.number);
+
+              const tableRows = allChildren.map(c => `| #${c.number} | ${c.title} | ${c.status} |`).join('\n');
+
+              const progress = closedChildren.length;
+              const total = closedChildren.length + openChildren.length;
+              const percentage = Math.round((progress / total) * 100);
+
+              // 添加评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  "## 🚫 父 Issue 无法关闭",
+                  "",
+                  `检测到 **${openChildren.length}** 个子 Issue 尚未完成，已自动重新打开此 Issue。`,
+                  "",
+                  "### 子 Issue 状态",
+                  "",
+                  "| Issue | 标题 | 状态 |",
+                  "|-------|------|------|",
+                  tableRows,
+                  "",
+                  `### 进度：${progress}/${total} (${percentage}%)`,
+                  "",
+                  "---",
+                  "",
+                  "> 💡 请先关闭所有子 Issue，然后再关闭此父 Issue。",
+                  "> 或使用 `/force-close` 命令强制关闭（需说明原因）。"
+                ].join("\n")
+              });
+
+              console.log(`Reopened issue #${issue.number} due to ${openChildren.length} open children`);
+            } else {
+              console.log('All child issues are closed, parent can stay closed');
+            }
+
+  auto-close-parent:
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check if closing this issue completes a parent
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const closedIssue = context.payload.issue;
+
+            // 查找引用了当前 issue 的父 Issue
+            const { data: searchResults } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open "#${closedIssue.number}" in:body`
+            });
+
+            for (const parentIssue of searchResults.items) {
+              const body = parentIssue.body || '';
+
+              // 确认这是一个包含子 Issue 列表的父 Issue
+              if (!body.includes('子 Issue') && !body.includes('child issue') && !body.includes('子Issue')) {
+                continue;
+              }
+
+              // 解析所有子 Issue
+              const issueRefRegex = /#(\d+)/g;
+              const matches = [...body.matchAll(issueRefRegex)];
+              const childIssueNumbers = [...new Set(matches.map(m => parseInt(m[1])))];
+              const filteredChildren = childIssueNumbers.filter(n => n !== parentIssue.number);
+
+              if (filteredChildren.length === 0) continue;
+
+              // 检查所有子 Issue 是否都已关闭
+              let allClosed = true;
+              const childStatuses = [];
+
+              for (const num of filteredChildren) {
+                try {
+                  const { data: childIssue } = await github.rest.issues.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: num
+                  });
+
+                  childStatuses.push({ number: num, title: childIssue.title, state: childIssue.state });
+
+                  if (childIssue.state === 'open') {
+                    allClosed = false;
+                  }
+                } catch (e) {
+                  console.log(`Could not fetch issue #${num}`);
+                }
+              }
+
+              // 如果所有子 Issue 都已关闭，自动关闭父 Issue
+              if (allClosed) {
+                const tableRows = childStatuses
+                  .sort((a, b) => a.number - b.number)
+                  .map(c => `| #${c.number} | ${c.title} | ✅ |`)
+                  .join('\n');
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parentIssue.number,
+                  body: [
+                    "## ✅ 所有子 Issue 已完成",
+                    "",
+                    `随着 #${closedIssue.number} 的关闭，此父 Issue 的所有子需求已全部完成！`,
+                    "",
+                    "### 完成清单",
+                    "",
+                    "| Issue | 标题 | 状态 |",
+                    "|-------|------|------|",
+                    tableRows,
+                    "",
+                    "---",
+                    "",
+                    "**自动关闭此 Issue。** 🎉",
+                    "",
+                    "> 🤖 由 Parent-Child Issue Guard 自动处理"
+                  ].join("\n")
+                });
+
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parentIssue.number,
+                  state: 'closed'
+                });
+
+                console.log(`Auto-closed parent issue #${parentIssue.number}`);
+              } else {
+                // 更新进度评论
+                const closedCount = childStatuses.filter(c => c.state === 'closed').length;
+                const totalCount = childStatuses.length;
+                const percentage = Math.round((closedCount / totalCount) * 100);
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: parentIssue.number,
+                  body: [
+                    `## 📊 进度更新`,
+                    "",
+                    `#${closedIssue.number} 已完成！`,
+                    "",
+                    `**当前进度：${closedCount}/${totalCount} (${percentage}%)**`,
+                    "",
+                    `${'▓'.repeat(Math.floor(percentage / 5))}${'░'.repeat(20 - Math.floor(percentage / 5))}`,
+                    "",
+                    "> 🤖 由 Parent-Child Issue Guard 自动更新"
+                  ].join("\n")
+                });
+              }
+            }
+
+  force-close:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/force-close')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Force close parent issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const comment = context.payload.comment;
+            const body = comment.body;
+
+            // 提取 /force-close 后的原因
+            const match = body.match(/\/force-close\s+([\s\S]*)/);
+            const reason = match ? match[1].trim() : '未提供原因';
+
+            if (!reason || reason === '') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "⚠️ **强制关闭失败**：请提供关闭原因。\n\n用法：`/force-close 原因说明`"
+              });
+              return;
+            }
+
+            // 关闭 Issue
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed'
+            });
+
+            // 添加标签
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['force-closed']
+            }).catch(() => {});
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                "## ⚡ 强制关闭",
+                "",
+                `**操作人：** @${comment.user.login}`,
+                `**原因：** ${reason}`,
+                "",
+                "---",
+                "> ⚠️ 此 Issue 在子需求未完全完成的情况下被强制关闭。"
+              ].join("\n")
+            });
