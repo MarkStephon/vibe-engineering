@@ -1,9 +1,15 @@
 import type { NextConfig } from "next";
+import path from "path";
+
+const rootDir = path.join(__dirname, "..");
 
 const nextConfig: NextConfig = {
-  // 设置 Turbopack 根目录，避免警告
+  // 设置输出文件追踪根目录（monorepo 需要）
+  // 指向项目根目录，确保包含所有必要的文件
+  outputFileTracingRoot: rootDir,
+  // Turbopack 根目录（与 outputFileTracingRoot 保持一致，避免警告）
   turbopack: {
-    root: process.cwd(),
+    root: rootDir,
   },
   // 优化开发体验
   experimental: {
