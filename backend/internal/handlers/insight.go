@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -13,17 +14,24 @@ import (
 	"vibe-backend/internal/repository"
 )
 
+// InsightProcessor defines the interface for async insight processing.
+type InsightProcessor interface {
+	ProcessInsightAsync(ctx context.Context, insightID uint)
+}
+
 // InsightHandler handles InsightFlow HTTP requests.
 type InsightHandler struct {
-	repo *repository.InsightRepository
-	log  *zap.Logger
+	repo      *repository.InsightRepository
+	processor InsightProcessor
+	log       *zap.Logger
 }
 
 // NewInsightHandler creates a new InsightHandler.
-func NewInsightHandler(repo *repository.InsightRepository, log *zap.Logger) *InsightHandler {
+func NewInsightHandler(repo *repository.InsightRepository, processor InsightProcessor, log *zap.Logger) *InsightHandler {
 	return &InsightHandler{
-		repo: repo,
-		log:  log,
+		repo:      repo,
+		processor: processor,
+		log:       log,
 	}
 }
 
@@ -111,9 +119,6 @@ func (h *InsightHandler) Create(c *gin.Context) {
 		Status:     models.InsightStatusPending,
 	}
 
-	// TODO: Detect source type from URL and extract source ID
-	// For now, we'll leave this for Issue #178+ to implement fully
-
 	if err := h.repo.Create(c.Request.Context(), insight); err != nil {
 		h.log.Error("Failed to create insight", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -121,6 +126,13 @@ func (h *InsightHandler) Create(c *gin.Context) {
 			"request_id": c.GetString("request_id"),
 		})
 		return
+	}
+
+	// Trigger async processing if processor is available
+	if h.processor != nil {
+		// Use background context for async processing since request context may be cancelled
+		go h.processor.ProcessInsightAsync(context.Background(), insight.ID)
+		h.log.Info("Triggered async insight processing", zap.Uint("insight_id", insight.ID))
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

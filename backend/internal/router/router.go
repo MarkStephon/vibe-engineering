@@ -54,7 +54,8 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 
 	// InsightFlow handlers
 	insightRepo := repository.NewInsightRepository(db.DB)
-	insightHandler := handlers.NewInsightHandler(insightRepo, log)
+	insightProcessor := services.NewInsightProcessor(insightRepo, youtubeService, log)
+	insightHandler := handlers.NewInsightHandler(insightRepo, insightProcessor, log)
 
 	// YouTube Data API v3 handlers (OAuth + API endpoints)
 	oauthService := services.NewOAuthService(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, log)
