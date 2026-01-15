@@ -9,6 +9,18 @@ on:
     types:
       - completed
 
+  # 手动触发测试
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '要分析的 workflow run ID'
+        required: true
+        type: string
+      test_mode:
+        description: '测试模式（不触发自动修复）'
+        default: true
+        type: boolean
+
 permissions:
   contents: write
   pull-requests: write
@@ -17,14 +29,14 @@ permissions:
 
 jobs:
   handle-errors:
-    if: github.event.workflow_run.conclusion == 'failure'
+    # 自动触发时只处理失败的 workflow，手动触发时总是运行
+    if: github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -33,7 +45,19 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const run = context.payload.workflow_run;
+            // 支持手动触发和自动触发两种模式
+            const isManualTrigger = context.eventName === 'workflow_dispatch';
+            const runId = isManualTrigger
+              ? parseInt('${{ inputs.run_id }}')
+              : context.payload.workflow_run.id;
+
+            // 获取 workflow run 信息
+            const runData = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            const run = runData.data;
 
             // 查找关联的 Issue
             let issueNumber = null;
@@ -41,7 +65,7 @@ jobs:
             if (branchMatch) {
               issueNumber = parseInt(branchMatch[1]);
             }
-            if (!issueNumber && run.pull_requests.length > 0) {
+            if (!issueNumber && run.pull_requests && run.pull_requests.length > 0) {
               issueNumber = run.pull_requests[0].number;
             }
 
@@ -49,7 +73,7 @@ jobs:
             const jobs = await github.rest.actions.listJobsForWorkflowRun({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              run_id: run.id
+              run_id: runId
             });
 
             const failedJobs = jobs.data.jobs.filter(job => job.conclusion === 'failure');
@@ -216,7 +240,7 @@ jobs:
             return { canAutoFix, isCodeError };
 
       - name: Trigger Auto-Fix (if applicable)
-        if: steps.check_fix.outputs.can_auto_fix == 'true'
+        if: steps.check_fix.outputs.can_auto_fix == 'true' && inputs.test_mode != true
         uses: actions/github-script@v7
         with:
           script: |
