@@ -162,6 +162,31 @@ jobs:
 
                 console.log(`   🚀 已触发 ${agentType} Agent for #${depIssue.number}`);
 
+                // 等待一小段时间让 workflow run 创建
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // 查询刚触发的 workflow run
+                let actionUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions`;
+                try {
+                  const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: agentWorkflow,
+                    per_page: 5
+                  });
+
+                  // 找到匹配此 issue 的最新 run
+                  const latestRun = runs.workflow_runs.find(run =>
+                    run.status === 'queued' || run.status === 'in_progress' || run.status === 'pending'
+                  ) || runs.workflow_runs[0];
+
+                  if (latestRun) {
+                    actionUrl = latestRun.html_url;
+                  }
+                } catch (e) {
+                  console.log(`   ⚠️ 获取 Action URL 失败: ${e.message}`);
+                }
+
                 // 发评论通知
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
@@ -176,7 +201,7 @@ jobs:
                     allDeps.map(d => `- ✅ #${d}`).join('\n'),
                     ``,
                     `---`,
-                    `> 📊 可通过 [Actions](/${context.repo.owner}/${context.repo.repo}/actions) 查看执行状态`
+                    `> 📊 **Actions 日志**: [查看详情](${actionUrl})`
                   ].join('\n')
                 });
 
