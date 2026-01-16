@@ -16,6 +16,36 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
   console.log(`模式: ${mode}`);
   if (specificIssue) console.log(`指定 Issue: #${specificIssue}`);
 
+  // 防重复机制：检查是否有同一任务正在运行
+  const currentRunId = context.runId;
+  try {
+    const { data: runs } = await github.rest.actions.listWorkflowRuns({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      workflow_id: 'vibe-continuous.yml',
+      status: 'in_progress',
+      per_page: 10
+    });
+
+    // 查找其他正在运行的相同任务
+    const duplicateRun = runs.workflow_runs.find(run => {
+      if (run.id === currentRunId) return false; // 排除自己
+      // 检查是否是相同的 issue 和模式（通过运行时间判断，5分钟内的视为重复）
+      const runTime = new Date(run.created_at);
+      const timeDiff = Math.abs(now - runTime);
+      return timeDiff < 5 * 60 * 1000; // 5分钟内
+    });
+
+    if (duplicateRun) {
+      console.log(`⏭️ 检测到重复运行 (run_id: ${duplicateRun.id})，跳过本次执行`);
+      console.log(`   另一个运行创建于: ${duplicateRun.created_at}`);
+      return;
+    }
+  } catch (e) {
+    console.log(`⚠️ 无法检查重复运行: ${e.message}`);
+    // 继续执行
+  }
+
   // 读取配置
   let config;
   try {
