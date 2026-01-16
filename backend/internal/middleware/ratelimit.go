@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"vibe-backend/internal/models"
 )
 
 // RateLimitConfig holds the configuration for rate limiting.
@@ -103,9 +104,10 @@ func RateLimit(config RateLimitConfig) gin.HandlerFunc {
 		key := c.ClientIP()
 
 		if !limiter.allow(key) {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":      "请求过于频繁，请稍后再试",
-				"request_id": c.GetString("request_id"),
+			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
+				Code:      models.ErrRateLimitExceeded,
+				Message:   "请求过于频繁，请稍后再试",
+				RequestID: c.GetString("request_id"),
 			})
 			c.Abort()
 			return

@@ -9,6 +9,16 @@ import (
 // ErrorCode represents API error codes.
 type ErrorCode string
 
+// Common error codes
+const (
+	ErrRateLimitExceeded ErrorCode = "RATE_LIMIT_EXCEEDED"
+	ErrNotFound          ErrorCode = "NOT_FOUND"
+	ErrBadRequest        ErrorCode = "BAD_REQUEST"
+	ErrUnauthorized      ErrorCode = "UNAUTHORIZED"
+	ErrForbidden         ErrorCode = "FORBIDDEN"
+	ErrInternalServer    ErrorCode = "INTERNAL_SERVER_ERROR"
+)
+
 // Analysis represents a generic analysis record.
 // This model is used for demonstrating proper error handling patterns.
 type Analysis struct {
