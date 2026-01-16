@@ -328,21 +328,26 @@
 
 ### 可复用 Actions
 
-项目提供了两个可复用的 Composite Actions，用于减少工作流代码重复：
+项目提供可复用的 Composite Actions，用于减少工作流代码重复：
 
-#### 1. GitHub Utils (`/.github/actions/github-utils/action.yml`)
+#### 1. Update Issue Status (`/.github/actions/update-issue-status/action.yml`)
 
-通用 GitHub API 操作，支持标签管理、评论、状态更新：
+统一的 Issue 状态标签管理：
 
 ```yaml
-- uses: ./.github/actions/github-utils
+- uses: ./.github/actions/update-issue-status
   with:
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    operation: update-status  # update-labels | add-comment | update-status
     issue_number: ${{ github.event.issue.number }}
-    status: processing  # processing | completed | failed
-    agent_name: 'My Agent'
+    status: processing  # processing | completed | failed | stale | deployed | needs_review
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    add_comment: 'true'  # 可选
+    comment_body: '状态更新消息'  # 可选
 ```
+
+特点：
+- 自动清理其他状态标签，确保状态互斥
+- 标签定义与 `workflow-config.json` 保持一致
+- 支持可选的状态评论
 
 #### 2. OpenRouter API (`/.github/actions/openrouter-api/action.yml`)
 
@@ -363,6 +368,21 @@
 - 自动处理 Retry-After 头
 - JSON 模式支持
 
+#### 3. Load Prompt (`/.github/actions/load-prompt/action.yml`)
+
+从模板文件加载并渲染 Prompt：
+
+```yaml
+- uses: ./.github/actions/load-prompt
+  with:
+    prompt_path: .github/prompts/agents/vibe/fe-codegen.md
+    variables: '{"requirement": "...", "project_context": "..."}'
+```
+
+#### 4. Context Discovery (`/.github/actions/context-discovery/action.yml`)
+
+自动发现项目上下文（技术栈、目录结构等）
+
 ### 配置文件
 
 项目使用中央配置文件管理工作流配置：
@@ -371,9 +391,16 @@
 
 ```json
 {
+  "version": "1.1.0",
   "prd": {
     "issue_number": 176,
     "sub_issues": [...]
+  },
+  "router": {
+    "complexity_thresholds": {
+      "simple_max_chars": 500,
+      "medium_max_chars": 2000
+    }
   },
   "monitor": {
     "stale_threshold_hours": 4,
@@ -381,16 +408,27 @@
   },
   "agents": {
     "default_model": "anthropic/claude-sonnet-4",
-    "router_model": "google/gemini-2.0-flash-001"
+    "ui_model": "google/gemini-2.0-flash-001",
+    "router_model": "google/gemini-2.0-flash-001",
+    "max_turns": { "simple": 30, "medium": 50, "complex": 60 }
+  },
+  "paths": {
+    "spec_dir": "docs/specs",
+    "prompts_dir": ".github/prompts"
   },
   "labels": {
     "status": {...},
     "complexity": {...},
-    "scope": {...}
+    "scope": {...},
+    "ui_spec": "ui-spec-ready"
   },
-  "skip_patterns": {
-    "title_patterns": [...],
-    "skip_labels": [...]
+  "skip_patterns": {...},
+  "api": {
+    "openrouter_base_url": "https://openrouter.ai/api/v1"
+  },
+  "git": {
+    "bot_name": "vibe-agent[bot]",
+    "bot_email": "vibe-agent@github-actions.bot"
   }
 }
 ```
@@ -404,32 +442,72 @@
 
 ```
 .github/
-├── actions/
-│   ├── github-utils/          # GitHub API 工具
-│   │   └── action.yml
-│   └── openrouter-api/        # OpenRouter API 客户端
-│       └── action.yml
+├── actions/                      # 可复用 Composite Actions
+│   ├── update-issue-status/      # Issue 状态标签管理
+│   ├── openrouter-api/           # OpenRouter API 客户端
+│   ├── load-prompt/              # Prompt 模板加载器
+│   └── context-discovery/        # 项目上下文发现
 ├── config/
-│   └── workflow-config.json   # 中央配置文件
-├── workflows/
-│   ├── vibe-agent.yml         # 主 Agent 入口
-│   ├── vibe-router.yml        # 复杂度路由
-│   ├── vibe-monitor.yml       # 任务监控
-│   └── ...
-└── README.md
+│   └── workflow-config.json      # 中央配置文件
+├── prompts/                      # AI Agent Prompt 模板
+│   ├── router/
+│   │   └── complexity-analyzer.md
+│   └── agents/
+│       ├── simple.md             # 简单任务 Agent
+│       ├── medium.md             # 中等任务 Agent
+│       ├── complex.md            # 复杂任务 Agent
+│       └── vibe/                 # Vibe Agent 专用
+│           ├── pm-compiler.md    # PM 需求编译
+│           ├── ui-spec.md        # UI 规格生成
+│           ├── be-contract.md    # 后端契约定义
+│           ├── be-codegen.md     # 后端代码生成
+│           └── fe-codegen.md     # 前端代码生成 (含 Base.org 设计系统)
+├── workflows/                    # GitHub Actions 工作流
+│   ├── vibe-agent.yml            # 主 Agent 入口
+│   ├── vibe-router.yml           # 复杂度路由
+│   ├── vibe-monitor.yml          # 任务监控
+│   ├── agent-simple.yml          # 简单任务处理
+│   ├── agent-medium.yml          # 中等任务处理
+│   ├── agent-complex.yml         # 复杂任务拆分
+│   ├── auto-trigger-frontend.yml # 后端完成后触发前端
+│   ├── feature-branch-manager.yml # 功能分支管理
+│   ├── fix-pr.yml                # PR 构建错误修复
+│   ├── issue-manager.yml         # Issue 自动管理
+│   ├── parent-child-issue-guard.yml # 父子 Issue 关系守护
+│   ├── update-prd-status.yml     # PRD 状态更新
+│   ├── vercel-status-monitor.yml # Vercel 部署监控
+│   ├── weekly-maintenance.yml    # 每周维护任务
+│   └── README.md                 # 本文档
+└── AGENT_GUIDE.md                # Agent 使用指南
 
 docs/
 └── specs/
-    └── issue-{number}-ui.md    # 自动生成的 UI Spec
+    └── issue-{number}-ui.md      # 自动生成的 UI Spec
 ```
 
 ---
 
 ## 更新日志
 
+- **2026-01-16** (目录结构优化):
+  - 新增 `update-issue-status` Action：统一 Issue 状态标签管理
+  - 整合前端 prompt：合并 `fe/system-prompt.md` 到 `fe-codegen.md`
+    - 包含完整的 Base.org 设计系统规范
+    - 颜色系统、圆角系统、无阴影/无边框设计原则
+  - 清理冗余文件：
+    - 删除 `prompts/backend-agent-prompt.md`（已被 be-contract.md 和 be-codegen.md 替代）
+    - 删除 `prompts/zhangxiaohao-prompt.md`（未使用的个人 prompt）
+    - 删除 `prompts/fe/` 目录（内容已整合）
+    - 删除 `scripts/` 目录（7 个脚本均未被工作流使用）
+    - 删除 `actions/github-utils/`（功能已整合到 update-issue-status）
+  - 更新 `workflow-config.json`：
+    - 新增 router.complexity_thresholds 配置
+    - 新增 paths 配置（spec_dir, prompts_dir）
+    - 新增 git 配置（bot_name, bot_email）
+  - 当前保留 14 个有效 workflow、4 个 Actions、9 个 Prompt 模板
+
 - **2026-01-16** (工作流优化):
   - 新增可复用 Composite Actions：
-    - `github-utils`: 通用 GitHub API 操作（标签、评论、状态）
     - `openrouter-api`: 带重试机制的 OpenRouter API 客户端
   - 新增中央配置文件 `.github/config/workflow-config.json`
   - 重构 `vibe-router.yml`：
@@ -444,7 +522,6 @@ docs/
     - 删除 `auto-fix-CI-failures.yml`（监听不存在的 CI workflow）
     - 删除 `sync-issue-status.yml`（硬编码 issue 号，功能过时）
     - 删除 `error-handler.yml`（监听不存在的 workflows）
-  - 当前保留 14 个有效 workflow
 - **2026-01**:
   - 统一 Agent 入口 (`vibe-agent.yml`)
   - 合并 issue-router/agent-ui/backend-agent/frontend-agent

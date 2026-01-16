@@ -1,7 +1,7 @@
 {
   "$schema": "./workflow-config.schema.json",
-  "version": "1.0.0",
-  "description": "Vibe Engineering Playbook - Workflow Configuration",
+  "version": "1.1.0",
+  "description": "Vibe Engineering Playbook - 统一工作流配置",
 
   "prd": {
     "issue_number": 176,
@@ -13,6 +13,13 @@
       { "number": 181, "priority": "P3", "name": "AI 对话面板 (Chat Console)", "frontend": true, "backend": true },
       { "number": 182, "priority": "P4", "name": "笔记分享功能", "frontend": true, "backend": true }
     ]
+  },
+
+  "router": {
+    "complexity_thresholds": {
+      "simple_max_chars": 500,
+      "medium_max_chars": 2000
+    }
   },
 
   "monitor": {
@@ -30,6 +37,11 @@
       "medium": 50,
       "complex": 60
     }
+  },
+
+  "paths": {
+    "spec_dir": "docs/specs",
+    "prompts_dir": ".github/prompts"
   },
 
   "labels": {
@@ -50,7 +62,8 @@
       "frontend": "frontend",
       "backend": "backend",
       "database": "database"
-    }
+    },
+    "ui_spec": "ui-spec-ready"
   },
 
   "skip_patterns": {
@@ -71,5 +84,10 @@
   "api": {
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "anthropic_base_url": "https://openrouter.ai/api"
+  },
+
+  "git": {
+    "bot_name": "vibe-agent[bot]",
+    "bot_email": "vibe-agent@github-actions.bot"
   }
 }
