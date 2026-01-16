@@ -252,6 +252,116 @@ jobs:
               };
             }
 
+            // 从 Agent 评论中解析已完成的验收项
+            async function parseAgentCompletionFromComments(issueNumber, criteria) {
+              try {
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  per_page: 50
+                });
+
+                // 查找最近的 Claude/Agent 完成报告（包含 "Claude finished" 或 "✅" 验收标记）
+                const agentComments = comments.filter(c =>
+                  c.body && (
+                    c.body.includes('Claude finished') ||
+                    c.body.includes('Status: COMPLETE') ||
+                    c.body.includes('**Status: COMPLETE') ||
+                    (c.body.includes('验收标准') && c.body.includes('✅'))
+                  )
+                );
+
+                if (agentComments.length === 0) {
+                  console.log(`    📝 未找到 Agent 完成报告评论`);
+                  return null;
+                }
+
+                // 取最近的一条
+                const latestComment = agentComments[agentComments.length - 1];
+                const commentBody = latestComment.body;
+
+                console.log(`    📝 找到 Agent 完成报告 (评论 ID: ${latestComment.id})`);
+
+                // 检查评论中是否表明所有验收标准都已完成
+                const allCriteriaCompleted = [];
+
+                for (const criterion of criteria) {
+                  // 在评论中查找该验收标准是否被标记为完成
+                  // 匹配模式：✅ 或 [x] 后面跟着验收标准文本
+                  const criterionText = criterion.text.toLowerCase();
+                  const commentLower = commentBody.toLowerCase();
+
+                  // 检查多种完成标记模式
+                  const isMarkedComplete =
+                    // 检查是否有 ✅ 标记且包含关键词
+                    (commentBody.includes('✅') && commentLower.includes(criterionText.substring(0, 20))) ||
+                    // 检查是否在 [x] 列表中
+                    commentBody.match(new RegExp(`\\[x\\]\\s*${criterion.text.substring(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')) ||
+                    // 检查是否有明确的完成声明
+                    (commentLower.includes('complete') && commentLower.includes(criterionText.substring(0, 15))) ||
+                    (commentLower.includes('已完成') && commentLower.includes(criterionText.substring(0, 15))) ||
+                    (commentLower.includes('已实现') && commentLower.includes(criterionText.substring(0, 15)));
+
+                  if (isMarkedComplete) {
+                    allCriteriaCompleted.push(criterion.text);
+                  }
+                }
+
+                // 如果评论中明确表示 "all requirements" 或 "100%" 完成
+                if (
+                  commentBody.includes('all requirements have already been implemented') ||
+                  commentBody.includes('All acceptance criteria') ||
+                  commentBody.includes('所有验收标准已满足') ||
+                  commentBody.includes('Status: COMPLETE')
+                ) {
+                  console.log(`    ✅ Agent 报告所有验收标准已完成`);
+                  return criteria.map(c => c.text);
+                }
+
+                if (allCriteriaCompleted.length > 0) {
+                  console.log(`    ✅ 从评论中识别到 ${allCriteriaCompleted.length} 个已完成项`);
+                  return allCriteriaCompleted;
+                }
+
+                return null;
+              } catch (error) {
+                console.error(`    ❌ 解析 Agent 评论失败: ${error.message}`);
+                return null;
+              }
+            }
+
+            // 更新 Issue body 中的 checkbox 状态
+            async function updateIssueCheckboxes(issueNumber, issueBody, completedItems) {
+              let updatedBody = issueBody;
+              let updateCount = 0;
+
+              for (const item of completedItems) {
+                // 转义正则特殊字符
+                const escapedItem = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // 匹配未勾选的 checkbox
+                const uncheckedPattern = new RegExp(`- \\[ \\]\\s*${escapedItem}`, 'gi');
+
+                if (uncheckedPattern.test(updatedBody)) {
+                  updatedBody = updatedBody.replace(uncheckedPattern, `- [x] ${item}`);
+                  updateCount++;
+                }
+              }
+
+              if (updateCount > 0) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: updatedBody
+                });
+                console.log(`    📝 已更新 ${updateCount} 个 checkbox 为已完成`);
+                return updatedBody;
+              }
+
+              return issueBody;
+            }
+
             // 触发 Agent 继续处理
             async function triggerContinuation(issue, evaluation) {
               // 检查迭代次数限制
@@ -394,6 +504,22 @@ jobs:
                 }
                 prInfo = prDetails.join('\n');
                 console.log(`  🔗 关联 PR: ${relatedPRs.length} 个`);
+              }
+
+              // 🔑 关键步骤：先从 Agent 评论中解析已完成项，更新 Issue body 的 checkbox
+              let currentBody = issue.body || '';
+              const agentCompletedItems = await parseAgentCompletionFromComments(issue.number, criteria);
+
+              if (agentCompletedItems && agentCompletedItems.length > 0) {
+                // 更新 Issue body 中的 checkbox
+                currentBody = await updateIssueCheckboxes(issue.number, currentBody, agentCompletedItems);
+
+                // 重新解析更新后的验收标准
+                const updatedCriteria = parseAcceptanceCriteria(currentBody);
+                if (updatedCriteria.length > 0) {
+                  criteria.length = 0;
+                  criteria.push(...updatedCriteria);
+                }
               }
 
               // 基于 checkbox 状态评估完成度（直接看 Issue body 中的 checkbox）
