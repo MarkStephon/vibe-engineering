@@ -170,8 +170,8 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 				insights.POST("/:id/analyze-entities", chatHandler.AnalyzeEntities)
 			}
 
-			// Shared insight (public access)
-			v1.GET("/shared/:token", insightHandler.GetShared)
+			// Shared insight (public access, with rate limiting to prevent brute-force)
+			v1.GET("/shared/:token", middleware.ShareAccessRateLimit(), insightHandler.GetShared)
 		}
 	}
 
