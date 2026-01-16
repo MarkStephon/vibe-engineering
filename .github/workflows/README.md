@@ -33,11 +33,11 @@
 
 **输出策略**:
 
-| 类型 | 输出位置 | 说明 |
-|------|----------|------|
-| UI Spec | `docs/specs/issue-{number}-ui.md` + PR | 避免评论折叠 |
-| 后端代码 | PR | 直接生成代码 |
-| 前端代码 | PR | 直接生成代码 |
+| 类型     | 输出位置                               | 说明         |
+| -------- | -------------------------------------- | ------------ |
+| UI Spec  | `docs/specs/issue-{number}-ui.md` + PR | 避免评论折叠 |
+| 后端代码 | PR                                     | 直接生成代码 |
+| 前端代码 | PR                                     | 直接生成代码 |
 
 **工作流程**:
 
@@ -148,12 +148,12 @@
 
 **复杂度判断标准**:
 
-| 等级 | 说明 | 路由目标 |
-|------|------|----------|
-| S (简单) | 单文件修改，< 2 小时 | agent-simple |
-| M (中等) | 2-5 个文件，2-8 小时 | agent-medium |
-| L (复杂) | > 5 个文件，> 1 天 | agent-complex |
-| skip | 非开发任务 | 不处理 |
+| 等级     | 说明                 | 路由目标      |
+| -------- | -------------------- | ------------- |
+| S (简单) | 单文件修改，< 2 小时 | agent-simple  |
+| M (中等) | 2-5 个文件，2-8 小时 | agent-medium  |
+| L (复杂) | > 5 个文件，> 1 天   | agent-complex |
+| skip     | 非开发任务           | 不处理        |
 
 **输出**:
 
@@ -184,11 +184,11 @@
 
 **命令**:
 
-| 命令 | 说明 |
-|------|------|
+| 命令               | 说明                        |
+| ------------------ | --------------------------- |
 | `feature:xxx` 标签 | 自动创建 `feature/xxx` 分支 |
-| `/sync` | 同步 main 到功能分支 |
-| `/merge-to-main` | 创建合并到 main 的 PR |
+| `/sync`            | 同步 main 到功能分支        |
+| `/merge-to-main`   | 创建合并到 main 的 PR       |
 
 ---
 
@@ -264,19 +264,19 @@
 
 ### 常用命令速查
 
-| 命令 | 说明 |
-|------|------|
-| `/agent ui` | 生成 UI 设计规格 → `docs/specs/` + PR |
-| `/agent be` | 生成后端代码 → PR |
-| `/agent fe` | 生成前端代码 → PR |
-| `/agent be --spec #123` | 基于指定 Issue 的 UI Spec 生成后端 |
-| `/agent-simple` | 简单任务 Agent |
-| `/agent-medium` | 中等任务 Agent |
-| `/agent-complex` | 复杂任务拆分 |
-| `/fix` | 修复 PR 构建错误 |
-| `/sync` | 同步 main 到功能分支 |
-| `/merge-to-main` | 创建合并 PR |
-| `/clean-stale` | 清理超时任务 |
+| 命令                    | 说明                                  |
+| ----------------------- | ------------------------------------- |
+| `/agent ui`             | 生成 UI 设计规格 → `docs/specs/` + PR |
+| `/agent be`             | 生成后端代码 → PR                     |
+| `/agent fe`             | 生成前端代码 → PR                     |
+| `/agent be --spec #123` | 基于指定 Issue 的 UI Spec 生成后端    |
+| `/agent-simple`         | 简单任务 Agent                        |
+| `/agent-medium`         | 中等任务 Agent                        |
+| `/agent-complex`        | 复杂任务拆分                          |
+| `/fix`                  | 修复 PR 构建错误                      |
+| `/sync`                 | 同步 main 到功能分支                  |
+| `/merge-to-main`        | 创建合并 PR                           |
+| `/clean-stale`          | 清理超时任务                          |
 
 ### 标签说明
 
@@ -338,13 +338,14 @@
 - uses: ./.github/actions/update-issue-status
   with:
     issue_number: ${{ github.event.issue.number }}
-    status: processing  # processing | completed | failed | stale | deployed | needs_review
+    status: processing # processing | completed | failed | stale | deployed | needs_review
     github_token: ${{ secrets.GITHUB_TOKEN }}
-    add_comment: 'true'  # 可选
-    comment_body: '状态更新消息'  # 可选
+    add_comment: "true" # 可选
+    comment_body: "状态更新消息" # 可选
 ```
 
 特点：
+
 - 自动清理其他状态标签，确保状态互斥
 - 标签定义与 `workflow-config.json` 保持一致
 - 支持可选的状态评论
@@ -358,12 +359,13 @@
   with:
     api_key: ${{ secrets.OPENROUTER_API_KEY }}
     model: google/gemini-2.0-flash-001
-    prompt: '你的 prompt 内容'
-    json_mode: 'true'
-    max_retries: '3'
+    prompt: "你的 prompt 内容"
+    json_mode: "true"
+    max_retries: "3"
 ```
 
 特点：
+
 - 指数退避重试（支持 429 Rate Limit 和 5xx 错误）
 - 自动处理 Retry-After 头
 - JSON 模式支持
@@ -434,6 +436,7 @@
 ```
 
 优点：
+
 - 集中管理配置，避免硬编码
 - 支持配置 Schema 验证
 - 方便修改阈值和标签名
