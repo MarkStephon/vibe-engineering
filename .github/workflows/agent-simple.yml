@@ -30,6 +30,7 @@ jobs:
           git config user.email "agent@vibe.bot"
 
       - name: Update Issue Status
+        id: update_issue_status
         uses: actions/github-script@v7
         with:
           script: |
@@ -51,6 +52,67 @@ jobs:
               issue_number: issue.number,
               labels: ['🤖 ai-processing', 'agent:simple']
             });
+            
+            // 创建进度追踪评论
+            const progressComment = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: [
+                "⚡ **Simple Agent 启动**",
+                "",
+                "---",
+                "",
+                "## 📊 执行进度",
+                "",
+                "**当前阶段**: 🔄 准备中...",
+                "",
+                "```",
+                "░░░░░░░░░░░░░░░░░░░░ 0%",
+                "```",
+                "",
+                "**状态**: ⏳ 正在初始化...",
+                "",
+                "---",
+                "> 💡 简单任务将直接开始开发。"
+              ].join("\n")
+            });
+            
+            // 保存评论 ID 供后续更新
+            core.setOutput('progress_comment_id', progressComment.data.id);
+
+      - name: Update Progress - Loading Template
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+            
+            if (progressCommentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: progressCommentId,
+                body: [
+                  "⚡ **Simple Agent 启动**",
+                  "",
+                  "---",
+                  "",
+                  "## 📊 执行进度",
+                  "",
+                  "**当前阶段**: 📝 加载模板和准备提示词...",
+                  "",
+                  "```",
+                  "██░░░░░░░░░░░░░░░░░░ 10%",
+                  "```",
+                  "",
+                  "**状态**: ⏳ 正在加载开发模板...",
+                  "",
+                  "---",
+                  "> 💡 简单任务将直接开始开发。"
+                ].join("\n")
+              });
+            }
 
       - name: Load Prompt Template
         id: prompt
@@ -63,6 +125,41 @@ jobs:
               "issue_number": "${{ github.event.issue.number }}",
               "title": ${{ toJson(github.event.issue.title) }},
               "body": ${{ toJson(github.event.issue.body) }}
+            }
+
+      - name: Update Progress - Running Claude
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+            
+            if (progressCommentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: progressCommentId,
+                body: [
+                  "⚡ **Simple Agent 启动**",
+                  "",
+                  "---",
+                  "",
+                  "## 📊 执行进度",
+                  "",
+                  "**当前阶段**: 🤖 AI 正在开发...",
+                  "",
+                  "```",
+                  "████████░░░░░░░░░░░░ 40%",
+                  "```",
+                  "",
+                  "**状态**: ⏳ Claude 正在处理任务...",
+                  "",
+                  "**提示**: 这可能需要几分钟时间，请耐心等待",
+                  "",
+                  "---",
+                  "> 💡 简单任务将直接开始开发。"
+                ].join("\n")
+              });
             }
 
       - name: Run Claude Code Action
@@ -86,6 +183,38 @@ jobs:
         with:
           script: |
             const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+
+            // 更新进度评论为完成状态
+            if (progressCommentId) {
+              try {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: progressCommentId,
+                  body: [
+                    "⚡ **Simple Agent 启动**",
+                    "",
+                    "---",
+                    "",
+                    "## 📊 执行进度",
+                    "",
+                    "**当前阶段**: ✅ 完成",
+                    "",
+                    "```",
+                    "████████████████████ 100%",
+                    "```",
+                    "",
+                    "**状态**: ✅ 任务已完成",
+                    "",
+                    "---",
+                    "> 💡 简单任务将直接开始开发。"
+                  ].join("\n")
+                });
+              } catch (e) {
+                console.log("无法更新进度评论:", e.message);
+              }
+            }
 
             // 移除 processing 标签，添加 completed 标签
             try {
@@ -125,6 +254,38 @@ jobs:
         with:
           script: |
             const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+
+            // 更新进度评论为失败状态
+            if (progressCommentId) {
+              try {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: progressCommentId,
+                  body: [
+                    "⚡ **Simple Agent 启动**",
+                    "",
+                    "---",
+                    "",
+                    "## 📊 执行进度",
+                    "",
+                    "**当前阶段**: ❌ 失败",
+                    "",
+                    "```",
+                    "████████░░░░░░░░░░░░ 40%",
+                    "```",
+                    "",
+                    "**状态**: ❌ 执行过程中出现错误",
+                    "",
+                    "---",
+                    "> 💡 简单任务将直接开始开发。"
+                  ].join("\n")
+                });
+              } catch (e) {
+                console.log("无法更新进度评论:", e.message);
+              }
+            }
 
             try {
               await github.rest.issues.removeLabel({

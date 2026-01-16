@@ -22,6 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Update Issue Status
+        id: update_issue_status
         uses: actions/github-script@v7
         with:
           script: |
@@ -44,15 +45,25 @@ jobs:
               labels: ['🤖 ai-processing', 'agent:complex', 'epic']
             });
 
-            // 发布开始分析的评论
-            await github.rest.issues.createComment({
+            // 创建进度追踪评论
+            const progressComment = await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issue.number,
               body: [
                 "📋 **Complex Agent 启动**",
                 "",
-                "复杂任务将被拆分为多个子 Issue...",
+                "---",
+                "",
+                "## 📊 执行进度",
+                "",
+                "**当前阶段**: 🔄 准备中...",
+                "",
+                "```",
+                "░░░░░░░░░░░░░░░░░░░░ 0%",
+                "```",
+                "",
+                "**状态**: ⏳ 正在初始化...",
                 "",
                 "**执行计划:**",
                 "1. 分析需求并识别模块",
@@ -60,9 +71,52 @@ jobs:
                 "3. 创建子 Issue 并设置依赖关系",
                 "4. 按依赖顺序自动触发开发",
                 "",
+                "---",
                 "> 💡 复杂任务需要拆分后才能高效处理。"
               ].join("\n")
             });
+            
+            // 保存评论 ID 供后续更新
+            core.setOutput('progress_comment_id', progressComment.data.id);
+
+      - name: Update Progress - Loading Template
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+            
+            if (progressCommentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: progressCommentId,
+                body: [
+                  "📋 **Complex Agent 启动**",
+                  "",
+                  "---",
+                  "",
+                  "## 📊 执行进度",
+                  "",
+                  "**当前阶段**: 📝 加载模板和准备提示词...",
+                  "",
+                  "```",
+                  "██░░░░░░░░░░░░░░░░░░ 10%",
+                  "```",
+                  "",
+                  "**状态**: ⏳ 正在加载拆分模板...",
+                  "",
+                  "**执行计划:**",
+                  "1. ✅ 分析需求并识别模块",
+                  "2. ⏳ 拆分为可独立开发的子任务",
+                  "3. ⏳ 创建子 Issue 并设置依赖关系",
+                  "4. ⏳ 按依赖顺序自动触发开发",
+                  "",
+                  "---",
+                  "> 💡 复杂任务需要拆分后才能高效处理。"
+                ].join("\n")
+              });
+            }
 
       - name: Load Prompt Template
         id: prompt
@@ -75,11 +129,53 @@ jobs:
               "body": ${{ toJson(github.event.issue.body) }}
             }
 
+      - name: Update Progress - Analyzing
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const progressCommentId = ${{ steps.update_issue_status.outputs.progress_comment_id }};
+            
+            if (progressCommentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: progressCommentId,
+                body: [
+                  "📋 **Complex Agent 启动**",
+                  "",
+                  "---",
+                  "",
+                  "## 📊 执行进度",
+                  "",
+                  "**当前阶段**: 🤖 AI 正在分析需求...",
+                  "",
+                  "```",
+                  "██████░░░░░░░░░░░░░░ 30%",
+                  "```",
+                  "",
+                  "**状态**: ⏳ Claude 正在分析任务结构...",
+                  "",
+                  "**执行计划:**",
+                  "1. ⏳ 分析需求并识别模块",
+                  "2. ⏳ 拆分为可独立开发的子任务",
+                  "3. ⏳ 创建子 Issue 并设置依赖关系",
+                  "4. ⏳ 按依赖顺序自动触发开发",
+                  "",
+                  "**提示**: 这可能需要几分钟时间，请耐心等待",
+                  "",
+                  "---",
+                  "> 💡 复杂任务需要拆分后才能高效处理。"
+                ].join("\n")
+              });
+            }
+
       - name: Analyze and Create Sub-Issues
         uses: actions/github-script@v7
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PROMPT_CONTENT: ${{ steps.prompt.outputs.prompt }}
+          PROGRESS_COMMENT_ID: ${{ steps.update_issue_status.outputs.progress_comment_id }}
         with:
           script: |
             const issue = context.payload.issue;
@@ -126,6 +222,44 @@ jobs:
               const architectureNotes = parsed.architecture_notes || '';
 
               console.log(`✅ 识别到 ${tasks.length} 个子任务`);
+
+              // 更新进度：分析完成，开始创建子 Issue
+              const progressCommentId = process.env.PROGRESS_COMMENT_ID;
+              if (progressCommentId && progressCommentId !== '') {
+                try {
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: parseInt(progressCommentId),
+                    body: [
+                      "📋 **Complex Agent 启动**",
+                      "",
+                      "---",
+                      "",
+                      "## 📊 执行进度",
+                      "",
+                      "**当前阶段**: 📝 正在创建子 Issue...",
+                      "",
+                      "```",
+                      "██████████░░░░░░░░░░ 50%",
+                      "```",
+                      "",
+                      `**状态**: ⏳ 已识别 ${tasks.length} 个子任务，正在创建...`,
+                      "",
+                      "**执行计划:**",
+                      "1. ✅ 分析需求并识别模块",
+                      "2. ✅ 拆分为可独立开发的子任务",
+                      "3. ⏳ 创建子 Issue 并设置依赖关系",
+                      "4. ⏳ 按依赖顺序自动触发开发",
+                      "",
+                      "---",
+                      "> 💡 复杂任务需要拆分后才能高效处理。"
+                    ].join("\n")
+                  });
+                } catch (e) {
+                  console.log("无法更新进度评论:", e.message);
+                }
+              }
 
               if (tasks.length === 0) {
                 throw new Error("未能拆分出子任务");
@@ -227,6 +361,83 @@ jobs:
                 });
 
                 console.log(`✅ 创建子 Issue #${subIssue.number}: ${task.title}`);
+                
+                // 更新进度：显示创建进度
+                const progressCommentId = process.env.PROGRESS_COMMENT_ID;
+                if (progressCommentId && progressCommentId !== '') {
+                  try {
+                    const progress = Math.round(50 + (i + 1) / tasks.length * 40);
+                    await github.rest.issues.updateComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      comment_id: parseInt(progressCommentId),
+                      body: [
+                        "📋 **Complex Agent 启动**",
+                        "",
+                        "---",
+                        "",
+                        "## 📊 执行进度",
+                        "",
+                        "**当前阶段**: 📝 正在创建子 Issue...",
+                        "",
+                        "```",
+                        `${'█'.repeat(Math.floor(progress / 5))}${'░'.repeat(20 - Math.floor(progress / 5))} ${progress}%`,
+                        "```",
+                        "",
+                        `**状态**: ⏳ 已创建 ${i + 1}/${tasks.length} 个子 Issue...`,
+                        "",
+                        "**执行计划:**",
+                        "1. ✅ 分析需求并识别模块",
+                        "2. ✅ 拆分为可独立开发的子任务",
+                        "3. ⏳ 创建子 Issue 并设置依赖关系",
+                        "4. ⏳ 按依赖顺序自动触发开发",
+                        "",
+                        "---",
+                        "> 💡 复杂任务需要拆分后才能高效处理。"
+                      ].join("\n")
+                    });
+                  } catch (e) {
+                    // 忽略更新错误，继续执行
+                  }
+                }
+              }
+
+              // 更新进度：创建完成
+              const finalProgressCommentId = process.env.PROGRESS_COMMENT_ID;
+              if (finalProgressCommentId && finalProgressCommentId !== '') {
+                try {
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: parseInt(finalProgressCommentId),
+                    body: [
+                      "📋 **Complex Agent 启动**",
+                      "",
+                      "---",
+                      "",
+                      "## 📊 执行进度",
+                      "",
+                      "**当前阶段**: ✅ 完成",
+                      "",
+                      "```",
+                      "████████████████████ 100%",
+                      "```",
+                      "",
+                      `**状态**: ✅ 已创建 ${createdIssues.length} 个子 Issue`,
+                      "",
+                      "**执行计划:**",
+                      "1. ✅ 分析需求并识别模块",
+                      "2. ✅ 拆分为可独立开发的子任务",
+                      "3. ✅ 创建子 Issue 并设置依赖关系",
+                      "4. ✅ 按依赖顺序自动触发开发",
+                      "",
+                      "---",
+                      "> 💡 复杂任务需要拆分后才能高效处理。"
+                    ].join("\n")
+                  });
+                } catch (e) {
+                  console.log("无法更新进度评论:", e.message);
+                }
               }
 
               // 在父 Issue 发布汇总评论
@@ -296,6 +507,38 @@ jobs:
 
             } catch (error) {
               console.error("❌ 任务拆分失败:", error.message);
+
+              // 更新进度评论为失败状态
+              const progressCommentId = process.env.PROGRESS_COMMENT_ID;
+              if (progressCommentId) {
+                try {
+                  await github.rest.issues.updateComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: parseInt(progressCommentId),
+                    body: [
+                      "📋 **Complex Agent 启动**",
+                      "",
+                      "---",
+                      "",
+                      "## 📊 执行进度",
+                      "",
+                      "**当前阶段**: ❌ 失败",
+                      "",
+                      "```",
+                      "██████░░░░░░░░░░░░░░ 30%",
+                      "```",
+                      "",
+                      "**状态**: ❌ 执行过程中出现错误",
+                      "",
+                      "---",
+                      "> 💡 复杂任务需要拆分后才能高效处理。"
+                    ].join("\n")
+                  });
+                } catch (e) {
+                  console.log("无法更新进度评论:", e.message);
+                }
+              }
 
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
