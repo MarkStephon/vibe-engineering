@@ -508,6 +508,12 @@ NEXT_PUBLIC_API_URL=https://your-backend.railway.app
 
 ### 2026
 
+- ✅ 创建 `update-prd-status.yml` workflow，实现 Issue 状态自动同步
+  - 自动检测子 Issue 的完成状态（通过 PR 和分支）
+  - 更新父 Issue (#176) 的状态表格
+  - 支持手动触发和自动触发（Issue 关闭/重新打开时）
+- ✅ 更新 #176 PRD 状态：将 #181 标记为"✅ 已完成"
+- ✅ 确认 #182 状态：前端功能尚未完成
 - ✅ 重写项目文档，包含完整的工作流系统说明
 - ✅ 新增 19+ GitHub Actions 工作流详细文档
 - ✅ 完善项目结构和使用指南

@@ -2,7 +2,7 @@ name: Weekly Maintenance
 
 on:
   schedule:
-    - cron: '0 8 * * MON'  # 每周一早上 8 点（UTC）
+    - cron: '30 2 * * *'  # 每天北京时间 10:30（UTC 2:30）
   workflow_dispatch:  # 支持手动触发
 
 jobs:

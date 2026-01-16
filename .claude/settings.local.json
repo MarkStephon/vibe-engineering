@@ -55,7 +55,10 @@
       "Bash(gh api:*)",
       "Bash(gh pr list:*)",
       "Bash(gh run view:*)",
-      "Bash(GO111MODULE=off go tool compile:*)"
+      "Bash(GO111MODULE=off go tool compile:*)",
+      "WebFetch(domain:claude.ai)",
+      "Bash(grep:*)",
+      "Bash(git log:*)"
     ]
   }
 }

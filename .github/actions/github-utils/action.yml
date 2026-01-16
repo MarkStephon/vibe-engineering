@@ -1,0 +1,156 @@
+name: 'GitHub Utils'
+description: 'Common GitHub API operations for Vibe workflows'
+author: 'Vibe Engineering'
+
+inputs:
+  github_token:
+    description: 'GitHub token for API calls'
+    required: true
+  operation:
+    description: 'Operation to perform: update-labels, add-comment, update-status'
+    required: true
+  issue_number:
+    description: 'Issue or PR number'
+    required: true
+  add_labels:
+    description: 'Labels to add (comma-separated)'
+    required: false
+    default: ''
+  remove_labels:
+    description: 'Labels to remove (comma-separated)'
+    required: false
+    default: ''
+  comment_body:
+    description: 'Comment body for add-comment operation'
+    required: false
+    default: ''
+  status:
+    description: 'Status for update-status: processing, completed, failed'
+    required: false
+    default: ''
+  agent_name:
+    description: 'Agent name for status messages'
+    required: false
+    default: 'Vibe Agent'
+
+outputs:
+  comment_id:
+    description: 'ID of created comment (if applicable)'
+    value: ${{ steps.run.outputs.comment_id }}
+  success:
+    description: 'Whether the operation succeeded'
+    value: ${{ steps.run.outputs.success }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Execute GitHub Operation
+      id: run
+      uses: actions/github-script@v7
+      env:
+        INPUT_OPERATION: ${{ inputs.operation }}
+        INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        INPUT_ADD_LABELS: ${{ inputs.add_labels }}
+        INPUT_REMOVE_LABELS: ${{ inputs.remove_labels }}
+        INPUT_COMMENT_BODY: ${{ inputs.comment_body }}
+        INPUT_STATUS: ${{ inputs.status }}
+        INPUT_AGENT_NAME: ${{ inputs.agent_name }}
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const operation = process.env.INPUT_OPERATION;
+          const issueNumber = parseInt(process.env.INPUT_ISSUE_NUMBER);
+          const addLabels = process.env.INPUT_ADD_LABELS ? process.env.INPUT_ADD_LABELS.split(',').map(l => l.trim()).filter(Boolean) : [];
+          const removeLabels = process.env.INPUT_REMOVE_LABELS ? process.env.INPUT_REMOVE_LABELS.split(',').map(l => l.trim()).filter(Boolean) : [];
+          const commentBody = process.env.INPUT_COMMENT_BODY;
+          const status = process.env.INPUT_STATUS;
+          const agentName = process.env.INPUT_AGENT_NAME;
+
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+
+          console.log(`🔧 Executing: ${operation} on #${issueNumber}`);
+
+          try {
+            switch (operation) {
+              case 'update-labels':
+                // Remove labels first
+                for (const label of removeLabels) {
+                  try {
+                    await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label });
+                    console.log(`  ➖ Removed: ${label}`);
+                  } catch (e) {
+                    if (e.status !== 404) console.log(`  ⚠️ Could not remove: ${label}`);
+                  }
+                }
+                // Add labels
+                if (addLabels.length > 0) {
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: addLabels });
+                  console.log(`  ➕ Added: ${addLabels.join(', ')}`);
+                }
+                break;
+
+              case 'add-comment':
+                const { data: comment } = await github.rest.issues.createComment({
+                  owner, repo, issue_number: issueNumber,
+                  body: commentBody
+                });
+                core.setOutput('comment_id', comment.id);
+                console.log(`  💬 Comment created: #${comment.id}`);
+                break;
+
+              case 'update-status':
+                // Define status configurations
+                const statusConfig = {
+                  processing: {
+                    add: ['🤖 ai-processing'],
+                    remove: ['✅ ai-completed', '❌ ai-failed', 'needs-review'],
+                    emoji: '🔧',
+                    message: `**${agentName} 启动**`
+                  },
+                  completed: {
+                    add: ['✅ ai-completed'],
+                    remove: ['🤖 ai-processing', '❌ ai-failed'],
+                    emoji: '✅',
+                    message: `**${agentName} 完成**`
+                  },
+                  failed: {
+                    add: ['❌ ai-failed', 'needs-review'],
+                    remove: ['🤖 ai-processing', '✅ ai-completed'],
+                    emoji: '❌',
+                    message: `**${agentName} 失败**`
+                  }
+                };
+
+                const config = statusConfig[status];
+                if (!config) throw new Error(`Unknown status: ${status}`);
+
+                // Update labels
+                for (const label of config.remove) {
+                  try {
+                    await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label });
+                  } catch (e) {}
+                }
+                await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: config.add });
+
+                // Add status comment if body provided
+                if (commentBody) {
+                  await github.rest.issues.createComment({
+                    owner, repo, issue_number: issueNumber,
+                    body: `${config.emoji} ${config.message}\n\n${commentBody}`
+                  });
+                }
+                console.log(`  📊 Status updated to: ${status}`);
+                break;
+
+              default:
+                throw new Error(`Unknown operation: ${operation}`);
+            }
+
+            core.setOutput('success', 'true');
+
+          } catch (error) {
+            console.error(`❌ Operation failed: ${error.message}`);
+            core.setOutput('success', 'false');
+            throw error;
+          }

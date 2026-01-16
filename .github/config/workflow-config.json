@@ -1,0 +1,75 @@
+{
+  "$schema": "./workflow-config.schema.json",
+  "version": "1.0.0",
+  "description": "Vibe Engineering Playbook - Workflow Configuration",
+
+  "prd": {
+    "issue_number": 176,
+    "sub_issues": [
+      { "number": 177, "priority": "P0", "name": "笔记系统数据模型", "frontend": false, "backend": true },
+      { "number": 178, "priority": "P0", "name": "时间轴导航栏 (Memory Rail)", "frontend": true, "backend": true },
+      { "number": 179, "priority": "P1", "name": "内容解析页面 (Insight Canvas)", "frontend": true, "backend": true },
+      { "number": 180, "priority": "P2", "name": "滑词交互功能", "frontend": true, "backend": false },
+      { "number": 181, "priority": "P3", "name": "AI 对话面板 (Chat Console)", "frontend": true, "backend": true },
+      { "number": 182, "priority": "P4", "name": "笔记分享功能", "frontend": true, "backend": true }
+    ]
+  },
+
+  "monitor": {
+    "stale_threshold_hours": 4,
+    "retry_limit": 3,
+    "check_interval_cron": "0 * * * *"
+  },
+
+  "agents": {
+    "default_model": "anthropic/claude-sonnet-4",
+    "ui_model": "google/gemini-2.0-flash-001",
+    "router_model": "google/gemini-2.0-flash-001",
+    "max_turns": {
+      "simple": 30,
+      "medium": 50,
+      "complex": 60
+    }
+  },
+
+  "labels": {
+    "status": {
+      "processing": "🤖 ai-processing",
+      "completed": "✅ ai-completed",
+      "failed": "❌ ai-failed",
+      "deployed": "✅ deployed",
+      "stale": "⚠️ stale",
+      "needs_review": "needs-review"
+    },
+    "complexity": {
+      "simple": "complexity:simple",
+      "medium": "complexity:medium",
+      "complex": "complexity:complex"
+    },
+    "scope": {
+      "frontend": "frontend",
+      "backend": "backend",
+      "database": "database"
+    }
+  },
+
+  "skip_patterns": {
+    "title_patterns": [
+      "^\\[PRD\\]",
+      "^\\[Auto\\]",
+      "^sub-issue",
+      "workflow.*fail"
+    ],
+    "skip_labels": [
+      "skip-vibe",
+      "manual",
+      "question",
+      "discussion"
+    ]
+  },
+
+  "api": {
+    "openrouter_base_url": "https://openrouter.ai/api/v1",
+    "anthropic_base_url": "https://openrouter.ai/api"
+  }
+}

@@ -7,7 +7,7 @@
 - [核心 Agent 工作流](#核心-agent-工作流)
 - [任务复杂度路由](#任务复杂度路由)
 - [自动化工作流](#自动化工作流)
-- [监控和错误处理](#监控和错误处理)
+- [监控工作流](#监控工作流)
 - [其他工作流](#其他工作流)
 - [使用指南](#使用指南)
 
@@ -178,21 +178,7 @@
 
 ---
 
-### 7. Auto Fix CI Failures (`auto-fix-CI-failures.yml`)
-
-**功能**: 自动修复 CI 构建失败。
-
-**触发方式**: CI workflow 失败时自动触发
-
-**特点**:
-
-- 获取失败的 CI 日志
-- 使用 Claude Code Action 自动修复
-- 创建修复分支
-
----
-
-### 8. Feature Branch Manager (`feature-branch-manager.yml`)
+### 7. Feature Branch Manager (`feature-branch-manager.yml`)
 
 **功能**: 管理功能分支，支持自动创建、同步和合并。
 
@@ -206,17 +192,9 @@
 
 ---
 
-## 监控和错误处理
+## 监控工作流
 
-### 9. Error Handler (`error-handler.yml`)
-
-**功能**: 自动分析 workflow 失败原因并提供修复建议。
-
-**触发方式**: Agent workflow 失败时自动触发
-
----
-
-### 10. Fix PR Build Errors (`fix-pr.yml`)
+### 8. Fix PR Build Errors (`fix-pr.yml`)
 
 **功能**: 修复 PR 中的构建错误。
 
@@ -224,13 +202,13 @@
 
 ---
 
-### 11. Vercel Status Monitor (`vercel-status-monitor.yml`)
+### 9. Vercel Status Monitor (`vercel-status-monitor.yml`)
 
 **功能**: 监控 Vercel 部署状态并更新 Issue/PR。
 
 ---
 
-### 12. Vibe Monitor (`vibe-monitor.yml`)
+### 10. Vibe Monitor (`vibe-monitor.yml`)
 
 **功能**: 监控任务状态，自动检测超时和失败任务。
 
@@ -240,35 +218,21 @@
 
 ## 其他工作流
 
-### 13. Issue Manager (`issue-manager.yml`)
+### 11. Issue Manager (`issue-manager.yml`)
 
 **功能**: 自动管理 Issue，包括标签和欢迎消息。
 
 ---
 
-### 14. Parent-Child Issue Guard (`parent-child-issue-guard.yml`)
+### 12. Parent-Child Issue Guard (`parent-child-issue-guard.yml`)
 
 **功能**: 管理父子 Issue 关系，防止父 Issue 在子 Issue 未完成时被关闭。
 
 ---
 
-### 15. Vibe Auto Vision (`vibe-auto-vision.yml`)
-
-**功能**: AI 产品经理分析，对需求进行产品化拆解。
-
-**触发方式**: Issue 被打上 `💡 insight` 标签时自动触发
-
----
-
-### 16. Weekly Maintenance (`weekly-maintenance.yml`)
+### 13. Weekly Maintenance (`weekly-maintenance.yml`)
 
 **功能**: 每周仓库维护，检查依赖、安全漏洞等。
-
----
-
-### 17. Sync Issue Status (`sync-issue-status.yml`)
-
-**功能**: 同步 Issue 实现状态，检测代码实现情况。
 
 ---
 
@@ -374,6 +338,14 @@ docs/
 
 ## 更新日志
 
+- **2026-01-16**:
+  - 清理无效 workflow 文件：
+    - 删除 `vibe-smoke-test.yml`（依赖不存在的脚本）
+    - 删除 `vibe-auto-vision.yml`（YAML 语法错误）
+    - 删除 `auto-fix-CI-failures.yml`（监听不存在的 CI workflow）
+    - 删除 `sync-issue-status.yml`（硬编码 issue 号，功能过时）
+    - 删除 `error-handler.yml`（监听不存在的 workflows）
+  - 当前保留 13 个有效 workflow
 - **2026-01**:
   - 统一 Agent 入口 (`vibe-agent.yml`)
   - 合并 issue-router/agent-ui/backend-agent/frontend-agent
@@ -384,7 +356,6 @@ docs/
   - 初始版本，包含所有核心工作流
   - 支持 OpenRouter 集成
   - 支持功能分支管理
-  - 支持自动错误分析和修复
 
 ---
 
