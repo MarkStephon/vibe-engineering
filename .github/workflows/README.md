@@ -326,9 +326,98 @@
 
 - `OPENROUTER_API_KEY`: OpenRouter API Key
 
+### 可复用 Actions
+
+项目提供了两个可复用的 Composite Actions，用于减少工作流代码重复：
+
+#### 1. GitHub Utils (`/.github/actions/github-utils/action.yml`)
+
+通用 GitHub API 操作，支持标签管理、评论、状态更新：
+
+```yaml
+- uses: ./.github/actions/github-utils
+  with:
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    operation: update-status  # update-labels | add-comment | update-status
+    issue_number: ${{ github.event.issue.number }}
+    status: processing  # processing | completed | failed
+    agent_name: 'My Agent'
+```
+
+#### 2. OpenRouter API (`/.github/actions/openrouter-api/action.yml`)
+
+带重试机制的 OpenRouter API 客户端：
+
+```yaml
+- uses: ./.github/actions/openrouter-api
+  with:
+    api_key: ${{ secrets.OPENROUTER_API_KEY }}
+    model: google/gemini-2.0-flash-001
+    prompt: '你的 prompt 内容'
+    json_mode: 'true'
+    max_retries: '3'
+```
+
+特点：
+- 指数退避重试（支持 429 Rate Limit 和 5xx 错误）
+- 自动处理 Retry-After 头
+- JSON 模式支持
+
+### 配置文件
+
+项目使用中央配置文件管理工作流配置：
+
+**`.github/config/workflow-config.json`**
+
+```json
+{
+  "prd": {
+    "issue_number": 176,
+    "sub_issues": [...]
+  },
+  "monitor": {
+    "stale_threshold_hours": 4,
+    "retry_limit": 3
+  },
+  "agents": {
+    "default_model": "anthropic/claude-sonnet-4",
+    "router_model": "google/gemini-2.0-flash-001"
+  },
+  "labels": {
+    "status": {...},
+    "complexity": {...},
+    "scope": {...}
+  },
+  "skip_patterns": {
+    "title_patterns": [...],
+    "skip_labels": [...]
+  }
+}
+```
+
+优点：
+- 集中管理配置，避免硬编码
+- 支持配置 Schema 验证
+- 方便修改阈值和标签名
+
 ### 文件结构
 
 ```
+.github/
+├── actions/
+│   ├── github-utils/          # GitHub API 工具
+│   │   └── action.yml
+│   └── openrouter-api/        # OpenRouter API 客户端
+│       └── action.yml
+├── config/
+│   └── workflow-config.json   # 中央配置文件
+├── workflows/
+│   ├── vibe-agent.yml         # 主 Agent 入口
+│   ├── vibe-router.yml        # 复杂度路由
+│   ├── vibe-monitor.yml       # 任务监控
+│   └── ...
+└── README.md
+
 docs/
 └── specs/
     └── issue-{number}-ui.md    # 自动生成的 UI Spec
@@ -338,14 +427,24 @@ docs/
 
 ## 更新日志
 
-- **2026-01-16**:
+- **2026-01-16** (工作流优化):
+  - 新增可复用 Composite Actions：
+    - `github-utils`: 通用 GitHub API 操作（标签、评论、状态）
+    - `openrouter-api`: 带重试机制的 OpenRouter API 客户端
+  - 新增中央配置文件 `.github/config/workflow-config.json`
+  - 重构 `vibe-router.yml`：
+    - 升级模型到 `google/gemini-2.0-flash-001`
+    - 添加 API 调用重试机制（指数退避）
+    - 从配置文件读取跳过规则和标签
+  - 重构 `update-prd-status.yml`：从配置文件读取 PRD 配置
+  - 重构 `vibe-monitor.yml`：从配置文件读取阈值配置
   - 清理无效 workflow 文件：
     - 删除 `vibe-smoke-test.yml`（依赖不存在的脚本）
     - 删除 `vibe-auto-vision.yml`（YAML 语法错误）
     - 删除 `auto-fix-CI-failures.yml`（监听不存在的 CI workflow）
     - 删除 `sync-issue-status.yml`（硬编码 issue 号，功能过时）
     - 删除 `error-handler.yml`（监听不存在的 workflows）
-  - 当前保留 13 个有效 workflow
+  - 当前保留 14 个有效 workflow
 - **2026-01**:
   - 统一 Agent 入口 (`vibe-agent.yml`)
   - 合并 issue-router/agent-ui/backend-agent/frontend-agent

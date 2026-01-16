@@ -667,40 +667,24 @@ jobs:
             console.log(`🌿 目标分支: ${branch}`);
             core.setOutput('branch', branch);
 
-      - name: Load FE Codegen Prompt
-        id: fe_codegen_prompt
-        uses: ./.github/actions/load-prompt
-        with:
-          template: agents/vibe/fe-codegen.md
-          variables: '{}'
-
-      - name: Prepare Context
-        id: prepare
+      - name: Get Requirement
+        id: requirement
         uses: actions/github-script@v7
         env:
           SPEC_SOURCE: ${{ needs.parse-command.outputs.spec_source }}
-          USER_INSTRUCTIONS: ${{ needs.parse-command.outputs.user_instructions }}
-          FE_CODEGEN_PROMPT: ${{ steps.fe_codegen_prompt.outputs.prompt }}
         with:
           script: |
             const fs = require('fs');
-            const path = require('path');
-
             const issue = context.payload.issue;
             const specSource = process.env.SPEC_SOURCE;
-            const userInstructions = process.env.USER_INSTRUCTIONS || '';
 
-            console.log('='.repeat(60));
-            console.log('🎨 FRONTEND AGENT - 准备上下文');
-            console.log('='.repeat(60));
-
-            // 1. 获取 UI Spec
             let uiSpec = '';
+            let specInfo = '';
 
             const specFile = `docs/specs/issue-${specSource || issue.number}-ui.md`;
             if (fs.existsSync(specFile)) {
               uiSpec = fs.readFileSync(specFile, 'utf8');
-              console.log(`✅ 从文件读取 UI Spec: ${specFile}`);
+              specInfo = `文件: ${specFile}`;
             } else if (specSource) {
               try {
                 const { data: specIssue } = await github.rest.issues.get({
@@ -709,61 +693,90 @@ jobs:
                   issue_number: parseInt(specSource)
                 });
                 uiSpec = specIssue.body || '';
-                console.log(`✅ 从 Issue #${specSource} 获取 UI Spec`);
+                specInfo = `Issue #${specSource}`;
               } catch (e) {
                 console.log(`⚠️ 无法获取 Issue #${specSource}`);
               }
             } else {
               uiSpec = issue.body || '';
-              console.log('✅ 使用当前 Issue 内容作为需求');
+              specInfo = '当前 Issue';
             }
 
-            // 2. 读取项目文件
-            const systemFiles = [
-              'frontend/package.json',
-              'frontend/STYLE_GUIDE.md',
-              'frontend/lib/api/client.ts',
-              'frontend/lib/api/types.ts',
-              'frontend/lib/routes.ts'  // 路由注册表 - 新页面必须更新
-            ];
+            console.log(`✅ UI Spec 来源: ${specInfo}`);
+            core.setOutput('spec', uiSpec);
+            core.setOutput('info', specInfo);
 
-            const projectContext = {};
-            for (const filePath of systemFiles) {
-              try {
-                if (fs.existsSync(filePath)) {
-                  projectContext[filePath] = fs.readFileSync(filePath, 'utf8');
-                }
-              } catch (e) {}
-            }
+      - name: Smart Context Discovery
+        id: context
+        uses: ./.github/actions/context-discovery
+        with:
+          requirement: ${{ steps.requirement.outputs.spec }}
+          target: frontend
+          max_context_size: '15000'
+          core_files: '["frontend/lib/routes.ts", "frontend/lib/api/types.ts", "frontend/lib/api/client.ts"]'
 
-            const projectContextText = Object.entries(projectContext)
-              .map(([p, c]) => `## ${p}\n\`\`\`typescript\n${c}\n\`\`\``)
-              .join('\n\n');
+      - name: Load FE Codegen Prompt
+        id: fe_codegen_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/fe-codegen.md
+          variables: '{}'
 
-            // 3. 发布简短启动评论
+      - name: Post Start Comment
+        uses: actions/github-script@v7
+        env:
+          SPEC_INFO: ${{ steps.requirement.outputs.info }}
+          CONTEXT_STATS: ${{ steps.context.outputs.stats }}
+        with:
+          script: |
+            const stats = JSON.parse(process.env.CONTEXT_STATS || '{}');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: issue.number,
+              issue_number: context.payload.issue.number,
               body: [
                 '🎨 **Frontend Agent 启动**',
                 '',
-                `**UI Spec:** ${specSource ? `Issue #${specSource}` : '当前 Issue'}`,
+                `**UI Spec:** ${process.env.SPEC_INFO}`,
+                `**上下文:** ${stats.totalFiles || 0} 个文件 (${Math.round((stats.totalSize || 0) / 1024)}KB)`,
+                `**发现文件:** ${stats.discoveredFiles || 0} 个相关组件`,
                 '',
                 '_正在生成代码..._'
               ].join('\n')
             });
 
-            // 4. 构建 Prompt
-            console.log('📄 使用模板: agents/vibe/fe-codegen.md');
+      - name: Prepare Prompt
+        id: prepare
+        env:
+          UI_SPEC: ${{ steps.requirement.outputs.spec }}
+          PROJECT_CONTEXT: ${{ steps.context.outputs.context }}
+          USER_INSTRUCTIONS: ${{ needs.parse-command.outputs.user_instructions }}
+          FE_CODEGEN_PROMPT: ${{ steps.fe_codegen_prompt.outputs.prompt }}
+        run: |
+          node << 'NODEJS_SCRIPT'
+          const fs = require('fs');
 
-            const prompt = process.env.FE_CODEGEN_PROMPT
-              .replace('{{requirement}}', uiSpec.substring(0, 10000))
-              .replace('{{user_instructions}}', userInstructions)
-              .replace('{{project_context}}', projectContextText || '无现有代码参考')
-              .replace(/\{\{#if user_instructions\}\}[\s\S]*?\{\{\/if\}\}/g, userInstructions ? `## 用户要求\n\n${userInstructions}` : '');
+          const uiSpec = process.env.UI_SPEC || '';
+          const projectContext = process.env.PROJECT_CONTEXT || '无现有代码参考';
+          const userInstructions = process.env.USER_INSTRUCTIONS || '';
+          let prompt = process.env.FE_CODEGEN_PROMPT;
 
-            core.setOutput('prompt', prompt);
+          // 替换模板变量
+          prompt = prompt
+            .replace('{{requirement}}', uiSpec.substring(0, 10000))
+            .replace('{{user_instructions}}', userInstructions)
+            .replace('{{project_context}}', projectContext)
+            .replace(/\{\{#if user_instructions\}\}[\s\S]*?\{\{\/if\}\}/g,
+              userInstructions ? `## 用户要求\n\n${userInstructions}` : '');
+
+          console.log('📄 Prompt prepared');
+          console.log(`📏 Total prompt size: ${prompt.length} chars`);
+
+          // 写入输出
+          const outputFile = process.env.GITHUB_OUTPUT;
+          const delimiter = 'EOF_' + Math.random().toString(36).substring(7);
+          fs.appendFileSync(outputFile, `prompt<<${delimiter}\n${prompt}\n${delimiter}\n`);
+          NODEJS_SCRIPT
 
       - name: Run Claude Code Action
         uses: anthropics/claude-code-action@v1

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Loader2, History, Clock, ArrowRight, Sparkles, Database } from "lucide-react";
+import { Search, Loader2, History, Clock, ArrowRight, Sparkles } from "lucide-react";
 import { videoApi } from '@/lib/api/endpoints';
 import { VideoMetadata, HistoryItem } from '@/types/video';
 import { toast } from '@/lib/utils/toast';
@@ -88,17 +88,6 @@ export default function AppContainer() {
             Transform any YouTube video into structured insights, summaries, and searchable transcripts in seconds.
           </p>
 
-          <div className="pt-4 animate-fade-in-up" style={{ animationDelay: '250ms' }}>
-            <Link href="/video">
-              <Button
-                variant="secondary"
-                className="rounded-full px-8 h-12 border-0 bg-secondary hover:bg-secondary/80 text-primary font-semibold"
-              >
-                <Database className="h-4 w-4 mr-2" />
-                Open Video Tool
-              </Button>
-            </Link>
-          </div>
         </div>
 
         <form 

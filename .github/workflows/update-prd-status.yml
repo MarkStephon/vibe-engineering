@@ -21,21 +21,39 @@ jobs:
       contents: read
 
     steps:
-      - name: Update PRD issue #176
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update PRD issue status
         uses: actions/github-script@v7
         with:
           script: |
-            const PRD_ISSUE = 176;
+            const fs = require('fs');
 
-            // InsightFlow 子 issue 配置
-            const SUB_ISSUES = [
-              { number: 177, priority: 'P0', name: '笔记系统数据模型', hasFrontend: false, hasBackend: true },
-              { number: 178, priority: 'P0', name: '时间轴导航栏 (Memory Rail)', hasFrontend: true, hasBackend: true },
-              { number: 179, priority: 'P1', name: '内容解析页面 (Insight Canvas)', hasFrontend: true, hasBackend: true },
-              { number: 180, priority: 'P2', name: '滑词交互功能', hasFrontend: true, hasBackend: false },
-              { number: 181, priority: 'P3', name: 'AI 对话面板 (Chat Console)', hasFrontend: true, hasBackend: true },
-              { number: 182, priority: 'P4', name: '笔记分享功能', hasFrontend: true, hasBackend: true },
-            ];
+            // 从配置文件读取 PRD 配置
+            let config;
+            try {
+              const configPath = '.github/config/workflow-config.json';
+              const configContent = fs.readFileSync(configPath, 'utf8');
+              config = JSON.parse(configContent);
+            } catch (error) {
+              core.setFailed(`无法读取配置文件: ${error.message}`);
+              return;
+            }
+
+            const PRD_ISSUE = config.prd.issue_number;
+
+            // 从配置文件读取子 issue 配置
+            const SUB_ISSUES = config.prd.sub_issues.map(sub => ({
+              number: sub.number,
+              priority: sub.priority,
+              name: sub.name,
+              hasFrontend: sub.frontend,
+              hasBackend: sub.backend
+            }));
+
+            console.log(`📋 PRD Issue: #${PRD_ISSUE}`);
+            console.log(`📎 子 Issues: ${SUB_ISSUES.map(s => `#${s.number}`).join(', ')}`);
 
             // 获取所有子 issue 的状态
             const issueStatuses = await Promise.all(

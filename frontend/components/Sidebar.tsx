@@ -3,8 +3,8 @@
 import React, { Dispatch, SetStateAction } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Youtube, ListMusic, Subtitles, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getNavRoutes, isPathActive } from "@/lib/routes";
 import QuotaMonitor from "./QuotaMonitor";
 
 interface SidebarProps {
@@ -16,12 +16,8 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const pathname = usePathname();
   const useLocalState = activeTab !== undefined && onTabChange !== undefined;
 
-  const menuItems = [
-    { id: 'video', label: 'Video Info', icon: Youtube, href: '/video' },
-    { id: 'playlist', label: 'Playlist', icon: ListMusic, href: '/playlist' },
-    { id: 'captions', label: 'Captions', icon: Subtitles, href: '/captions' },
-    { id: 'auth', label: 'Authorization', icon: ShieldCheck, href: '/auth' },
-  ];
+  // 从路由注册表获取导航菜单项
+  const menuItems = getNavRoutes();
 
   return (
     <aside className="w-64 hidden md:flex flex-col h-screen sticky top-0 bg-background border-r border-border/50 p-6">

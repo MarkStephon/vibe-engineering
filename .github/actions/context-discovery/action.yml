@@ -1,0 +1,352 @@
+name: 'Smart Context Discovery'
+description: '智能上下文发现 - 根据 PRD 关键词动态发现相关代码文件'
+
+inputs:
+  requirement:
+    description: 'PRD/需求文档内容'
+    required: true
+  target:
+    description: '目标类型: frontend | backend'
+    required: true
+    default: 'frontend'
+  max_context_size:
+    description: '最大上下文大小（字符数）'
+    required: false
+    default: '15000'
+  core_files:
+    description: 'JSON 数组格式的核心文件列表（总是读取）'
+    required: false
+
+outputs:
+  context:
+    description: '发现的上下文内容（格式化后）'
+    value: ${{ steps.discover.outputs.context }}
+  discovered_files:
+    description: '发现的相关文件列表（JSON 数组）'
+    value: ${{ steps.discover.outputs.discovered_files }}
+  keywords:
+    description: '提取的关键词列表'
+    value: ${{ steps.discover.outputs.keywords }}
+  stats:
+    description: '上下文统计信息'
+    value: ${{ steps.discover.outputs.stats }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Discover Context
+      id: discover
+      shell: bash
+      env:
+        REQUIREMENT: ${{ inputs.requirement }}
+        TARGET: ${{ inputs.target }}
+        MAX_SIZE: ${{ inputs.max_context_size }}
+        CORE_FILES: ${{ inputs.core_files }}
+      run: |
+        node << 'NODEJS_SCRIPT'
+        const fs = require('fs');
+        const path = require('path');
+        const { execSync } = require('child_process');
+
+        const requirement = process.env.REQUIREMENT || '';
+        const target = process.env.TARGET || 'frontend';
+        const maxSize = parseInt(process.env.MAX_SIZE) || 15000;
+        const coreFilesInput = process.env.CORE_FILES || '';
+
+        console.log('='.repeat(60));
+        console.log('🔍 SMART CONTEXT DISCOVERY');
+        console.log('='.repeat(60));
+        console.log(`📁 Target: ${target}`);
+        console.log(`📏 Max context size: ${maxSize} chars`);
+
+        // ============================================================
+        // Layer 1: 核心文件（总是读取）
+        // ============================================================
+        let coreFiles = [];
+
+        if (coreFilesInput) {
+          try {
+            coreFiles = JSON.parse(coreFilesInput);
+          } catch (e) {
+            console.warn('⚠️ 无法解析 core_files，使用默认值');
+          }
+        }
+
+        if (coreFiles.length === 0) {
+          if (target === 'frontend') {
+            coreFiles = [
+              'frontend/lib/routes.ts',
+              'frontend/lib/api/types.ts',
+              'frontend/lib/api/client.ts'
+            ];
+          } else {
+            coreFiles = [
+              'backend/internal/router/router.go',
+              'backend/go.mod'
+            ];
+          }
+        }
+
+        console.log('\n📦 Layer 1: Core Files');
+        console.log(coreFiles.map(f => `  - ${f}`).join('\n'));
+
+        // ============================================================
+        // Layer 2: 从需求中提取关键词
+        // ============================================================
+        console.log('\n🔑 Layer 2: Keyword Extraction');
+
+        // 常见停用词
+        const stopWords = new Set([
+          'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+          'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+          'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+          'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as',
+          'into', 'through', 'during', 'before', 'after', 'above', 'below',
+          'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why',
+          'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most',
+          'other', 'some', 'such', 'no', 'not', 'only', 'same', 'so', 'than',
+          'too', 'very', 'just', 'also', 'now', 'here', 'there', 'this', 'that',
+          '的', '是', '在', '有', '和', '与', '或', '了', '着', '过', '把', '被',
+          '让', '给', '从', '到', '向', '对', '于', '以', '为', '而', '但', '如果',
+          '那么', '所以', '因为', '虽然', '但是', '而且', '并且', '或者', '还是',
+          '可以', '需要', '应该', '必须', '能够', '一个', '这个', '那个', '什么',
+          '使用', '实现', '创建', '添加', '删除', '修改', '更新', '显示', '展示',
+          '功能', '页面', '组件', '按钮', '表格', '列表', '表单', '输入', '输出',
+          'page', 'component', 'button', 'form', 'input', 'output', 'list',
+          'table', 'item', 'data', 'user', 'file', 'code', 'function', 'api'
+        ]);
+
+        // 提取有意义的关键词
+        const extractKeywords = (text) => {
+          const words = text
+            .toLowerCase()
+            .replace(/[^\w\u4e00-\u9fa5\s-]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 3 && !stopWords.has(w));
+
+          // 统计词频
+          const freq = {};
+          words.forEach(w => freq[w] = (freq[w] || 0) + 1);
+
+          // 按频率排序，取 top 20
+          return Object.entries(freq)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 20)
+            .map(([word]) => word);
+        };
+
+        // 提取特定的技术词汇和业务词汇
+        const extractTechTerms = (text) => {
+          const patterns = [
+            /\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b/g,  // PascalCase
+            /\b([a-z]+(?:[A-Z][a-z]+)+)\b/g,        // camelCase
+            /\/([\w-]+)/g,                           // 路径片段
+            /@[\w-]+\/[\w-]+/g,                      // 包名
+            /['"`]([\w-]+)['"`]/g                    // 引号中的标识符
+          ];
+
+          const terms = new Set();
+          patterns.forEach(pattern => {
+            let match;
+            while ((match = pattern.exec(text)) !== null) {
+              const term = match[1] || match[0];
+              if (term.length >= 3 && term.length <= 30) {
+                terms.add(term.toLowerCase());
+              }
+            }
+          });
+
+          return Array.from(terms);
+        };
+
+        const keywords = [...new Set([
+          ...extractKeywords(requirement),
+          ...extractTechTerms(requirement)
+        ])].slice(0, 30);
+
+        console.log(`  Keywords: ${keywords.slice(0, 10).join(', ')}${keywords.length > 10 ? '...' : ''}`);
+
+        // ============================================================
+        // Layer 3: 根据关键词搜索相关文件
+        // ============================================================
+        console.log('\n🔎 Layer 3: File Discovery');
+
+        const searchDir = target === 'frontend' ? 'frontend' : 'backend';
+        const discoveredFiles = new Set();
+
+        // 搜索策略 1: 文件名匹配
+        const findByName = (keyword) => {
+          try {
+            const result = execSync(
+              `find ${searchDir} -type f \\( -name "*.tsx" -o -name "*.ts" -o -name "*.go" \\) 2>/dev/null | grep -i "${keyword}" | head -5`,
+              { encoding: 'utf8', timeout: 5000 }
+            ).trim().split('\n').filter(Boolean);
+            return result;
+          } catch (e) {
+            return [];
+          }
+        };
+
+        // 搜索策略 2: 文件内容匹配（使用 grep）
+        const findByContent = (keyword) => {
+          try {
+            const result = execSync(
+              `grep -rl "${keyword}" ${searchDir} --include="*.tsx" --include="*.ts" --include="*.go" 2>/dev/null | head -3`,
+              { encoding: 'utf8', timeout: 5000 }
+            ).trim().split('\n').filter(Boolean);
+            return result;
+          } catch (e) {
+            return [];
+          }
+        };
+
+        // 只搜索 top 10 关键词以避免超时
+        const searchKeywords = keywords.slice(0, 10);
+
+        for (const keyword of searchKeywords) {
+          if (keyword.length < 4) continue; // 跳过太短的关键词
+
+          const byName = findByName(keyword);
+          const byContent = findByContent(keyword);
+
+          [...byName, ...byContent].forEach(f => {
+            // 排除 node_modules 和测试文件
+            if (!f.includes('node_modules') &&
+                !f.includes('.test.') &&
+                !f.includes('.spec.') &&
+                !f.includes('__tests__')) {
+              discoveredFiles.add(f);
+            }
+          });
+        }
+
+        // 添加组件目录下的 index 文件
+        if (target === 'frontend') {
+          try {
+            const componentDirs = execSync(
+              `find frontend/components -type d -mindepth 1 -maxdepth 1 2>/dev/null`,
+              { encoding: 'utf8', timeout: 3000 }
+            ).trim().split('\n').filter(Boolean);
+
+            componentDirs.forEach(dir => {
+              const indexFile = path.join(dir, 'index.tsx');
+              if (fs.existsSync(indexFile)) {
+                discoveredFiles.add(indexFile);
+              }
+            });
+          } catch (e) {}
+        }
+
+        console.log(`  Found ${discoveredFiles.size} related files`);
+        console.log([...discoveredFiles].slice(0, 5).map(f => `  - ${f}`).join('\n'));
+        if (discoveredFiles.size > 5) {
+          console.log(`  ... and ${discoveredFiles.size - 5} more`);
+        }
+
+        // ============================================================
+        // 读取文件并控制上下文大小
+        // ============================================================
+        console.log('\n📖 Reading files...');
+
+        const readFile = (filePath) => {
+          try {
+            if (fs.existsSync(filePath)) {
+              return fs.readFileSync(filePath, 'utf8');
+            }
+          } catch (e) {}
+          return null;
+        };
+
+        const truncateContent = (content, maxLen = 2000) => {
+          if (content.length <= maxLen) return content;
+          return content.substring(0, maxLen) + '\n// ... [truncated]';
+        };
+
+        let totalSize = 0;
+        const contextParts = [];
+
+        // 首先读取核心文件
+        console.log('\n  📦 Reading core files...');
+        for (const filePath of coreFiles) {
+          const content = readFile(filePath);
+          if (content) {
+            const truncated = truncateContent(content, 3000);
+            contextParts.push({
+              path: filePath,
+              content: truncated,
+              size: truncated.length,
+              layer: 'core'
+            });
+            totalSize += truncated.length;
+            console.log(`    ✅ ${filePath} (${truncated.length} chars)`);
+          }
+        }
+
+        // 然后读取发现的相关文件（按大小限制）
+        console.log('\n  📦 Reading discovered files...');
+        const sortedDiscovered = [...discoveredFiles]
+          .filter(f => !coreFiles.includes(f))
+          .slice(0, 15);  // 最多 15 个发现的文件
+
+        for (const filePath of sortedDiscovered) {
+          if (totalSize >= maxSize * 0.9) {
+            console.log('    ⚠️ Approaching size limit, stopping');
+            break;
+          }
+
+          const content = readFile(filePath);
+          if (content) {
+            // 根据剩余空间决定截断长度
+            const remainingSpace = maxSize - totalSize;
+            const truncateLen = Math.min(1500, remainingSpace);
+            const truncated = truncateContent(content, truncateLen);
+
+            contextParts.push({
+              path: filePath,
+              content: truncated,
+              size: truncated.length,
+              layer: 'discovered'
+            });
+            totalSize += truncated.length;
+            console.log(`    ✅ ${filePath} (${truncated.length} chars)`);
+          }
+        }
+
+        // ============================================================
+        // 格式化输出
+        // ============================================================
+        const formattedContext = contextParts
+          .map(({ path, content }) => {
+            const ext = path.split('.').pop();
+            const lang = ext === 'go' ? 'go' : 'typescript';
+            return `## ${path}\n\`\`\`${lang}\n${content}\n\`\`\``;
+          })
+          .join('\n\n');
+
+        const stats = {
+          totalFiles: contextParts.length,
+          coreFiles: contextParts.filter(p => p.layer === 'core').length,
+          discoveredFiles: contextParts.filter(p => p.layer === 'discovered').length,
+          totalSize: totalSize,
+          maxSize: maxSize,
+          keywordsUsed: searchKeywords.length
+        };
+
+        console.log('\n📊 Stats:');
+        console.log(`  Total files: ${stats.totalFiles}`);
+        console.log(`  Core files: ${stats.coreFiles}`);
+        console.log(`  Discovered files: ${stats.discoveredFiles}`);
+        console.log(`  Total size: ${stats.totalSize} / ${stats.maxSize} chars (${Math.round(stats.totalSize / stats.maxSize * 100)}%)`);
+
+        // 写入 GitHub 输出
+        const outputFile = process.env.GITHUB_OUTPUT;
+        if (outputFile) {
+          const delimiter = 'EOF_' + Math.random().toString(36).substring(7);
+          fs.appendFileSync(outputFile, `context<<${delimiter}\n${formattedContext}\n${delimiter}\n`);
+          fs.appendFileSync(outputFile, `discovered_files=${JSON.stringify([...discoveredFiles])}\n`);
+          fs.appendFileSync(outputFile, `keywords=${JSON.stringify(keywords)}\n`);
+          fs.appendFileSync(outputFile, `stats=${JSON.stringify(stats)}\n`);
+        }
+
+        console.log('\n✅ Context discovery complete');
+        NODEJS_SCRIPT

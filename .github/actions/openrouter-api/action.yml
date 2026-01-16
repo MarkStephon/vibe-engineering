@@ -1,0 +1,188 @@
+name: 'OpenRouter API'
+description: 'Unified OpenRouter API client with retry, rate limiting, and error handling'
+author: 'Vibe Engineering'
+
+inputs:
+  api_key:
+    description: 'OpenRouter API Key'
+    required: true
+  model:
+    description: 'Model to use (e.g., google/gemini-2.0-flash-001, anthropic/claude-sonnet-4)'
+    required: false
+    default: 'google/gemini-2.0-flash-001'
+  prompt:
+    description: 'The prompt to send to the model'
+    required: true
+  temperature:
+    description: 'Temperature for generation'
+    required: false
+    default: '0.1'
+  max_tokens:
+    description: 'Maximum tokens to generate'
+    required: false
+    default: '4096'
+  json_mode:
+    description: 'Enable JSON response format'
+    required: false
+    default: 'false'
+  max_retries:
+    description: 'Maximum number of retries on failure'
+    required: false
+    default: '3'
+  retry_delay_ms:
+    description: 'Base delay between retries in milliseconds'
+    required: false
+    default: '1000'
+
+outputs:
+  response:
+    description: 'The model response content'
+    value: ${{ steps.call.outputs.response }}
+  success:
+    description: 'Whether the API call succeeded'
+    value: ${{ steps.call.outputs.success }}
+  error:
+    description: 'Error message if failed'
+    value: ${{ steps.call.outputs.error }}
+  attempts:
+    description: 'Number of attempts made'
+    value: ${{ steps.call.outputs.attempts }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Call OpenRouter API
+      id: call
+      uses: actions/github-script@v7
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.api_key }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_PROMPT: ${{ inputs.prompt }}
+        INPUT_TEMPERATURE: ${{ inputs.temperature }}
+        INPUT_MAX_TOKENS: ${{ inputs.max_tokens }}
+        INPUT_JSON_MODE: ${{ inputs.json_mode }}
+        INPUT_MAX_RETRIES: ${{ inputs.max_retries }}
+        INPUT_RETRY_DELAY_MS: ${{ inputs.retry_delay_ms }}
+      with:
+        script: |
+          const model = process.env.INPUT_MODEL;
+          const prompt = process.env.INPUT_PROMPT;
+          const temperature = parseFloat(process.env.INPUT_TEMPERATURE);
+          const maxTokens = parseInt(process.env.INPUT_MAX_TOKENS);
+          const jsonMode = process.env.INPUT_JSON_MODE === 'true';
+          const maxRetries = parseInt(process.env.INPUT_MAX_RETRIES);
+          const retryDelayMs = parseInt(process.env.INPUT_RETRY_DELAY_MS);
+          const apiKey = process.env.OPENROUTER_API_KEY;
+
+          console.log(`🤖 Calling OpenRouter API`);
+          console.log(`   Model: ${model}`);
+          console.log(`   JSON Mode: ${jsonMode}`);
+          console.log(`   Max Retries: ${maxRetries}`);
+
+          // Helper: exponential backoff with jitter
+          const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+          const getBackoffDelay = (attempt) => {
+            const baseDelay = retryDelayMs * Math.pow(2, attempt);
+            const jitter = Math.random() * 500;
+            return Math.min(baseDelay + jitter, 30000); // Cap at 30s
+          };
+
+          // Helper: check if error is retryable
+          const isRetryableError = (status, error) => {
+            // Rate limit (429), server errors (5xx), or network errors
+            if (status === 429) return true;
+            if (status >= 500 && status < 600) return true;
+            if (error?.message?.includes('fetch failed')) return true;
+            if (error?.message?.includes('network')) return true;
+            return false;
+          };
+
+          let lastError = null;
+          let attempts = 0;
+
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            attempts = attempt + 1;
+
+            try {
+              // Build request body
+              const body = {
+                model: model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: temperature,
+                max_tokens: maxTokens
+              };
+
+              // Add JSON mode if requested
+              if (jsonMode) {
+                body.response_format = { type: "json_object" };
+              }
+
+              const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${apiKey}`,
+                  "Content-Type": "application/json",
+                  "HTTP-Referer": "https://github.com/lessthanno/vibe-engineering-playbook",
+                  "X-Title": "Vibe Engineering Playbook"
+                },
+                body: JSON.stringify(body)
+              });
+
+              // Handle rate limiting
+              if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After');
+                const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : getBackoffDelay(attempt);
+                console.log(`⚠️ Rate limited. Waiting ${waitTime}ms before retry...`);
+                await sleep(waitTime);
+                continue;
+              }
+
+              // Handle other errors
+              if (!response.ok) {
+                const errorBody = await response.text();
+                lastError = new Error(`API error ${response.status}: ${errorBody}`);
+
+                if (isRetryableError(response.status, lastError)) {
+                  const waitTime = getBackoffDelay(attempt);
+                  console.log(`⚠️ Attempt ${attempt + 1} failed (${response.status}). Retrying in ${waitTime}ms...`);
+                  await sleep(waitTime);
+                  continue;
+                }
+
+                // Non-retryable error
+                throw lastError;
+              }
+
+              // Parse successful response
+              const data = await response.json();
+              const content = data.choices?.[0]?.message?.content || '';
+
+              console.log(`✅ API call successful after ${attempts} attempt(s)`);
+
+              core.setOutput('response', content);
+              core.setOutput('success', 'true');
+              core.setOutput('error', '');
+              core.setOutput('attempts', attempts.toString());
+              return;
+
+            } catch (error) {
+              lastError = error;
+
+              if (isRetryableError(0, error) && attempt < maxRetries) {
+                const waitTime = getBackoffDelay(attempt);
+                console.log(`⚠️ Attempt ${attempt + 1} failed: ${error.message}. Retrying in ${waitTime}ms...`);
+                await sleep(waitTime);
+                continue;
+              }
+
+              // Final failure or non-retryable error
+              break;
+            }
+          }
+
+          // All retries exhausted
+          console.error(`❌ API call failed after ${attempts} attempts: ${lastError?.message}`);
+          core.setOutput('response', '');
+          core.setOutput('success', 'false');
+          core.setOutput('error', lastError?.message || 'Unknown error');
+          core.setOutput('attempts', attempts.toString());

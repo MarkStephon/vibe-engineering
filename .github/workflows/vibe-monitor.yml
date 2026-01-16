@@ -25,10 +25,14 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Monitor and Recover
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const action = '${{ github.event.inputs.action }}' || 'check';
             const now = new Date();
 
@@ -37,6 +41,17 @@ jobs:
             console.log("=".repeat(60));
             console.log(`时间: ${now.toISOString()}`);
             console.log(`操作: ${action}`);
+
+            // 从配置文件读取阈值配置
+            let config;
+            try {
+              const configPath = '.github/config/workflow-config.json';
+              const configContent = fs.readFileSync(configPath, 'utf8');
+              config = JSON.parse(configContent);
+            } catch (error) {
+              console.warn(`⚠️ 无法读取配置文件，使用默认值: ${error.message}`);
+              config = { monitor: { stale_threshold_hours: 4, retry_limit: 3 } };
+            }
 
             // 获取所有打开的 Issue
             const { data: allIssues } = await github.rest.issues.listForRepo({
@@ -55,9 +70,11 @@ jobs:
               completed: 0
             };
 
-            // 阈值配置
-            const STALE_HOURS = 4;  // 超过4小时未更新视为超时
-            const RETRY_LIMIT = 3; // 最大重试次数
+            // 阈值配置（从配置文件读取）
+            const STALE_HOURS = config.monitor.stale_threshold_hours;
+            const RETRY_LIMIT = config.monitor.retry_limit;
+
+            console.log(`📊 配置: 超时阈值=${STALE_HOURS}h, 重试上限=${RETRY_LIMIT}次`);
 
             for (const issue of allIssues) {
               const labels = issue.labels.map(l => l.name);
