@@ -13,7 +13,13 @@
       "Bash(git push:*)",
       "Bash(python3:*)",
       "Bash(node:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh api:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh label delete:*)",
+      "Bash(gh label create:*)"
     ]
   }
 }

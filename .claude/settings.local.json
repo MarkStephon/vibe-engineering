@@ -58,7 +58,13 @@
       "Bash(GO111MODULE=off go tool compile:*)",
       "WebFetch(domain:claude.ai)",
       "Bash(grep:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(gh workflow view:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
