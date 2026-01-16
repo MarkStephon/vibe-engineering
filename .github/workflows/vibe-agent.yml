@@ -125,12 +125,33 @@ jobs:
           git config user.name "vibe-agent[bot]"
           git config user.email "vibe-agent@github-actions.bot"
 
+      - name: Load PM Compiler Prompt
+        id: pm_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/pm-compiler.md
+          variables: |
+            {
+              "title": ${{ toJson(github.event.issue.title) }},
+              "body": ${{ toJson(github.event.issue.body) }},
+              "user_instructions": ${{ toJson(needs.parse-command.outputs.user_instructions) }}
+            }
+
+      - name: Load UI Spec Prompt
+        id: ui_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/ui-spec.md
+          variables: '{}'
+
       - name: Generate UI Spec
         id: generate
         uses: actions/github-script@v7
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           USER_INSTRUCTIONS: ${{ needs.parse-command.outputs.user_instructions }}
+          PM_PROMPT: ${{ steps.pm_prompt.outputs.prompt }}
+          UI_PROMPT_TEMPLATE: ${{ steps.ui_prompt.outputs.prompt }}
         with:
           script: |
             const fs = require('fs');
@@ -146,35 +167,9 @@ jobs:
 
             // Step 1: PM Compiler - 将 PRD 转换为清晰的产品需求规格
             console.log('\n📝 Step 1: PM Compiler...');
+            console.log('📄 使用模板: agents/vibe/pm-compiler.md');
 
-            const pmPrompt = [
-              '你是一个【需求编译器（PM Requirement Compiler）】。',
-              '',
-              '你的职责是将【人类 PM 编写的需求文本】转换为【清晰的产品需求规格】。',
-              '',
-              '输入（PM 原始需求）:',
-              `标题: ${issue.title}`,
-              `内容: ${issue.body || '无'}`,
-              '',
-              userInstructions ? `用户额外指令: ${userInstructions}` : '',
-              '',
-              '输出要求:',
-              '- 消除歧义，冻结事实',
-              '- 明确禁止项和边界情况',
-              '- 不得新增原需求里不存在的新功能',
-              '',
-              '输出格式（JSON）:',
-              '{',
-              '  "product_goal": "产品目标（一句话）",',
-              '  "user_actions": ["用户动作 → 系统反应"],',
-              '  "input_rules": ["输入规则"],',
-              '  "output_rules": ["输出规则"],',
-              '  "forbidden_actions": ["禁止行为"],',
-              '  "edge_cases": ["异常处理"]',
-              '}',
-              '',
-              '只返回 JSON。'
-            ].join('\n');
+            const pmPrompt = process.env.PM_PROMPT;
 
             const pmRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -232,54 +227,10 @@ jobs:
 
             // Step 2: UI Spec Generator
             console.log('\n🎨 Step 2: UI Spec Generator...');
+            console.log('📄 使用模板: agents/vibe/ui-spec.md');
 
-            const uiPrompt = [
-              '你是 UI 设计规格生成器。',
-              '',
-              '将产品需求转换为【UI 设计规格】。',
-              '**注意：只关注 UI 设计层面，不涉及具体的文件路径和代码实现。**',
-              '',
-              '## 可用的 shadcn/ui 组件',
-              '布局: Card, Tabs, Separator, ScrollArea',
-              '表单: Button, Input, Textarea, Select, Switch, Form',
-              '反馈: Alert, Dialog, Sheet, Tooltip, Sonner(toast), Progress, Skeleton',
-              '导航: Breadcrumb, DropdownMenu, Command, Pagination',
-              '数据: Avatar, Badge, Table, Calendar',
-              '',
-              '## Base.org 设计系统规范',
-              '- 颜色：Base Blue (#0000ff) 作为主色，90% 区域使用灰度',
-              '- 圆角：按钮/输入框 12px，卡片 12-16px',
-              '- 无阴影、无边框设计',
-              '',
-              '## 需求',
-              compiledRequirement,
-              '',
-              '## 输出格式',
-              '',
-              '# UI 设计规格',
-              '',
-              '## 功能概述',
-              '一段话描述功能',
-              '',
-              '## 页面布局',
-              '整体布局结构',
-              '',
-              '## 组件设计',
-              '### 组件名称',
-              '- 功能描述',
-              '- 使用的 shadcn/ui 组件',
-              '- 视觉样式',
-              '- 状态变化',
-              '',
-              '## 交互流程',
-              '用户操作 → 界面反应',
-              '',
-              '## 响应式设计',
-              '不同屏幕的适配',
-              '',
-              '---',
-              '只输出 UI 设计规格，不要写代码。'
-            ].join('\n');
+            // 将 compiledRequirement 注入到 UI Spec 模板中
+            const uiPrompt = process.env.UI_PROMPT_TEMPLATE.replace('{{compiled_requirement}}', compiledRequirement);
 
             const uiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -476,6 +427,20 @@ jobs:
             console.log(`🌿 目标分支: ${branch}`);
             core.setOutput('branch', branch);
 
+      - name: Load BE Contract Prompt
+        id: be_contract_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/be-contract.md
+          variables: '{}'
+
+      - name: Load BE Codegen Prompt
+        id: be_codegen_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/be-codegen.md
+          variables: '{}'
+
       - name: Prepare Context
         id: prepare
         uses: actions/github-script@v7
@@ -483,6 +448,8 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SPEC_SOURCE: ${{ needs.parse-command.outputs.spec_source }}
           USER_INSTRUCTIONS: ${{ needs.parse-command.outputs.user_instructions }}
+          BE_CONTRACT_PROMPT: ${{ steps.be_contract_prompt.outputs.prompt }}
+          BE_CODEGEN_PROMPT: ${{ steps.be_codegen_prompt.outputs.prompt }}
         with:
           script: |
             const fs = require('fs');
@@ -525,18 +492,13 @@ jobs:
 
             // 2. 生成 API Contract
             console.log('\n📋 生成 API Contract...');
+            console.log('📄 使用模板: agents/vibe/be-contract.md');
 
-            const contractPrompt = `基于以下 UI Spec，推导最小 API 契约。
-
-            ${userInstructions ? `用户要求: ${userInstructions}\n\n` : ''}
-
-            UI Spec:
-            ${uiSpec.substring(0, 8000)}
-
-            返回 JSON 数组:
-            [{"endpoint": "/api/xxx", "method": "POST", "description": "描述", "request": {}, "response": {}}]
-
-            只返回 JSON。`;
+            // 将变量注入到模板中
+            let contractPrompt = process.env.BE_CONTRACT_PROMPT
+              .replace('{{ui_spec}}', uiSpec.substring(0, 8000))
+              .replace('{{user_instructions}}', userInstructions)
+              .replace(/\{\{#if user_instructions\}\}[\s\S]*?\{\{\/if\}\}/g, userInstructions ? `用户要求: ${userInstructions}` : '');
 
             const contractRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
               method: 'POST',
@@ -603,26 +565,13 @@ jobs:
             });
 
             // 5. 构建 Prompt
-            const prompt = `你是后端代码生成专家。
+            console.log('📄 使用模板: agents/vibe/be-codegen.md');
 
-            ## 任务
-            基于 API Contract 实现后端代码。
-
-            ## API Contract
-            ${JSON.stringify(apiContract, null, 2)}
-
-            ${userInstructions ? `## 用户要求\n${userInstructions}\n` : ''}
-
-            ## 项目约束
-            ${projectContextText || '无现有代码参考'}
-
-            ## 要求
-            - 遵循现有代码风格
-            - 所有文件在 backend/ 目录下
-            - 使用 Go 标准库和项目已有依赖
-            - 包含错误处理和日志记录
-
-            请生成完整的后端实现。`;
+            const prompt = process.env.BE_CODEGEN_PROMPT
+              .replace('{{api_contract}}', JSON.stringify(apiContract, null, 2))
+              .replace('{{user_instructions}}', userInstructions)
+              .replace('{{project_context}}', projectContextText || '无现有代码参考')
+              .replace(/\{\{#if user_instructions\}\}[\s\S]*?\{\{\/if\}\}/g, userInstructions ? `## 用户要求\n\n${userInstructions}` : '');
 
             core.setOutput('prompt', prompt);
 
@@ -718,12 +667,20 @@ jobs:
             console.log(`🌿 目标分支: ${branch}`);
             core.setOutput('branch', branch);
 
+      - name: Load FE Codegen Prompt
+        id: fe_codegen_prompt
+        uses: ./.github/actions/load-prompt
+        with:
+          template: agents/vibe/fe-codegen.md
+          variables: '{}'
+
       - name: Prepare Context
         id: prepare
         uses: actions/github-script@v7
         env:
           SPEC_SOURCE: ${{ needs.parse-command.outputs.spec_source }}
           USER_INSTRUCTIONS: ${{ needs.parse-command.outputs.user_instructions }}
+          FE_CODEGEN_PROMPT: ${{ steps.fe_codegen_prompt.outputs.prompt }}
         with:
           script: |
             const fs = require('fs');
@@ -766,7 +723,8 @@ jobs:
               'frontend/package.json',
               'frontend/STYLE_GUIDE.md',
               'frontend/lib/api/client.ts',
-              'frontend/lib/api/types.ts'
+              'frontend/lib/api/types.ts',
+              'frontend/lib/routes.ts'  // 路由注册表 - 新页面必须更新
             ];
 
             const projectContext = {};
@@ -797,35 +755,13 @@ jobs:
             });
 
             // 4. 构建 Prompt
-            const prompt = `你是前端代码生成专家。
+            console.log('📄 使用模板: agents/vibe/fe-codegen.md');
 
-            ## 任务
-            基于 UI Spec 实现前端页面和组件。
-
-            ## UI Spec
-            ${uiSpec.substring(0, 10000)}
-
-            ${userInstructions ? `## 用户要求\n${userInstructions}\n` : ''}
-
-            ## 项目约束
-            ${projectContextText || '无现有代码参考'}
-
-            ## 技术栈
-            - Next.js 15 (App Router)
-            - React 19
-            - TypeScript
-            - Tailwind CSS
-            - shadcn/ui
-            - Base.org 设计系统
-
-            ## 要求
-            - 严格遵循 STYLE_GUIDE.md 的设计规范
-            - 使用 shadcn/ui 组件
-            - 所有文件在 frontend/ 目录下
-            - 使用 TypeScript
-            - API 调用使用 lib/api/client.ts
-
-            请生成完整的前端实现。`;
+            const prompt = process.env.FE_CODEGEN_PROMPT
+              .replace('{{ui_spec}}', uiSpec.substring(0, 10000))
+              .replace('{{user_instructions}}', userInstructions)
+              .replace('{{project_context}}', projectContextText || '无现有代码参考')
+              .replace(/\{\{#if user_instructions\}\}[\s\S]*?\{\{\/if\}\}/g, userInstructions ? `## 用户要求\n\n${userInstructions}` : '');
 
             core.setOutput('prompt', prompt);
 
