@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MemoryRail } from "@/components/insights/MemoryRail";
 import { InsightCanvas } from "@/components/insights/InsightCanvas";
+import { ChatConsole } from "@/components/insights/ChatConsole";
 import { cn } from "@/lib/utils";
 
 /**
@@ -51,18 +52,22 @@ export default function InsightsPage() {
         )}
       </main>
 
-      {/* Right Sidebar - Reserved for future features */}
+      {/* Right Sidebar - AI Chat Console */}
       <aside
         className={cn(
-          "w-80 border-l border-border/50 flex-shrink-0",
-          "hidden lg:block bg-muted/20"
+          "w-96 border-l border-border/50 flex-shrink-0",
+          "hidden lg:flex lg:flex-col"
         )}
       >
-        <div className="h-full flex items-center justify-center p-6">
-          <p className="text-sm text-muted-foreground text-center">
-            侧边栏功能即将上线
-          </p>
-        </div>
+        {selectedInsightId ? (
+          <ChatConsole insightId={selectedInsightId} />
+        ) : (
+          <div className="h-full flex items-center justify-center p-6 bg-muted/20">
+            <p className="text-sm text-muted-foreground text-center">
+              选择内容后即可与 AI 对话
+            </p>
+          </div>
+        )}
       </aside>
     </div>
   );
