@@ -111,7 +111,7 @@ jobs:
               ].join("\n")
             });
 
-            // 添加标签
+            // 添加任务类型标签（不添加 ai-processing，让 agent-medium 自己管理）
             try {
               await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
@@ -121,15 +121,25 @@ jobs:
               });
             } catch (e) {}
 
-            const labels = ['🤖 ai-processing'];
-            if (taskType !== 'unknown') labels.push(taskType);
+            // 移除可能残留的 ai-processing 标签，避免 agent-medium 误判
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                name: '🤖 ai-processing'
+              });
+            } catch (e) {}
 
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              labels: labels
-            });
+            // 只添加任务类型标签，ai-processing 由 agent-medium 添加
+            if (taskType !== 'unknown') {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: [taskType]
+              });
+            }
 
             // 触发对应 Agent
             try {
