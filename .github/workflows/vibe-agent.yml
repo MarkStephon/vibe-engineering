@@ -731,14 +731,19 @@ jobs:
             console.log('🔧 BACKEND AGENT - 准备上下文');
             console.log('='.repeat(60));
 
-            // 1. 获取 UI Spec
+            // 1. 获取技术规格
             let uiSpec = '';
 
-            // 优先从文件读取
-            const specFile = `docs/specs/issue-${specSource || issue.number}-ui.md`;
-            if (fs.existsSync(specFile)) {
-              uiSpec = fs.readFileSync(specFile, 'utf8');
-              console.log(`✅ 从文件读取 UI Spec: ${specFile}`);
+            // 优先从文件读取（支持 -spec.md 和 -ui.md 两种格式）
+            const specFileNew = `docs/specs/issue-${specSource || issue.number}-spec.md`;
+            const specFileOld = `docs/specs/issue-${specSource || issue.number}-ui.md`;
+            
+            if (fs.existsSync(specFileNew)) {
+              uiSpec = fs.readFileSync(specFileNew, 'utf8');
+              console.log(`✅ 从文件读取技术规格: ${specFileNew}`);
+            } else if (fs.existsSync(specFileOld)) {
+              uiSpec = fs.readFileSync(specFileOld, 'utf8');
+              console.log(`✅ 从文件读取 UI 规格: ${specFileOld}`);
             } else if (specSource) {
               // 从指定 Issue 获取
               try {
@@ -748,7 +753,7 @@ jobs:
                   issue_number: parseInt(specSource)
                 });
                 uiSpec = specIssue.body || '';
-                console.log(`✅ 从 Issue #${specSource} 获取 UI Spec`);
+                console.log(`✅ 从 Issue #${specSource} 获取规格`);
               } catch (e) {
                 console.log(`⚠️ 无法获取 Issue #${specSource}`);
               }
@@ -980,10 +985,16 @@ jobs:
             let uiSpec = '';
             let specInfo = '';
 
-            const specFile = `docs/specs/issue-${specSource || issue.number}-ui.md`;
-            if (fs.existsSync(specFile)) {
-              uiSpec = fs.readFileSync(specFile, 'utf8');
-              specInfo = `文件: ${specFile}`;
+            // 优先读取技术规格文件（-spec.md），兼容旧的 UI 规格文件（-ui.md）
+            const specFileNew = `docs/specs/issue-${specSource || issue.number}-spec.md`;
+            const specFileOld = `docs/specs/issue-${specSource || issue.number}-ui.md`;
+            
+            if (fs.existsSync(specFileNew)) {
+              uiSpec = fs.readFileSync(specFileNew, 'utf8');
+              specInfo = `文件: ${specFileNew}`;
+            } else if (fs.existsSync(specFileOld)) {
+              uiSpec = fs.readFileSync(specFileOld, 'utf8');
+              specInfo = `文件: ${specFileOld}`;
             } else if (specSource) {
               try {
                 const { data: specIssue } = await github.rest.issues.get({
@@ -1001,7 +1012,7 @@ jobs:
               specInfo = '当前 Issue';
             }
 
-            console.log(`✅ UI Spec 来源: ${specInfo}`);
+            console.log(`✅ 规格来源: ${specInfo}`);
             core.setOutput('spec', uiSpec);
             core.setOutput('info', specInfo);
 
