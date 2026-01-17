@@ -21,7 +21,9 @@ jobs:
     if: |
       github.event_name == 'workflow_call' ||
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.comment.body, '/agent-medium')
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request == null &&
+        contains(github.event.comment.body, '/agent-medium'))
     runs-on: ubuntu-latest
 
     permissions:
@@ -375,7 +377,9 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.OPENROUTER_API_KEY }}
           github_token: ${{ github.token }}
-          track_progress: true
+          # track_progress only supports: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review
+          # Not supported for workflow_dispatch or workflow_call events
+          track_progress: ${{ github.event_name == 'issue_comment' }}
           prompt: ${{ steps.prompt.outputs.prompt }}
           claude_args: |
             --model anthropic/claude-sonnet-4
