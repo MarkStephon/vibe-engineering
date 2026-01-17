@@ -381,6 +381,13 @@ jobs:
           # Not supported for workflow_dispatch or workflow_call events
           track_progress: ${{ github.event_name == 'issue_comment' }}
           prompt: ${{ steps.prompt.outputs.prompt }}
+          # 允许 github-actions bot 触发
+          # 这对于以下自动化场景是必需的：
+          # - vibe-router 自动路由任务
+          # - vibe-continuous 自动迭代和验收
+          # - dependency-chain 触发依赖任务
+          # 否则会报错：Workflow initiated by non-human actor
+          allowed_bots: 'github-actions'
           claude_args: |
             --model anthropic/claude-sonnet-4
             --max-turns 50
@@ -986,3 +993,98 @@ jobs:
             });
 
             // 不再创建额外评论，所有信息都在进度追踪评论中
+
+      - name: Collect Router Feedback
+        if: failure() && steps.check_result.outputs.claude_failed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const issueNumber = ${{ steps.issue_info.outputs.issue_number }};
+            
+            console.log('📊 收集 Router 反馈数据...');
+            
+            try {
+              // 读取执行结果数据
+              const executionFile = '/home/runner/work/_temp/claude-execution-output.json';
+              let executionData = {};
+              
+              if (fs.existsSync(executionFile)) {
+                executionData = JSON.parse(fs.readFileSync(executionFile, 'utf8'));
+              }
+              
+              // 判断是否因为任务复杂度误判导致失败
+              const isComplexityMismatch = 
+                executionData.num_turns >= 45 ||  // 接近或达到上限
+                executionData.subtype === 'error_max_turns';
+              
+              if (isComplexityMismatch) {
+                console.log('⚠️ 检测到可能的复杂度误判');
+                
+                // 获取 Issue 信息
+                const { data: issue } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber
+                });
+                
+                // 检查是否有 Router 评估标签
+                const labels = issue.labels.map(l => l.name);
+                let routerPrediction = 'M';  // 默认 Medium（因为是 agent-medium.yml）
+                if (labels.includes('complexity:simple')) routerPrediction = 'S';
+                if (labels.includes('complexity:complex')) routerPrediction = 'L';
+                
+                // 构建反馈数据
+                const feedbackData = {
+                  issue_number: issueNumber,
+                  issue_title: issue.title,
+                  issue_body_preview: (issue.body || '').substring(0, 500),
+                  router_prediction: {
+                    complexity: routerPrediction,
+                    labels: labels.filter(l => l.startsWith('complexity:'))
+                  },
+                  actual_execution: {
+                    agent_used: 'medium',
+                    total_turns: executionData.num_turns || 0,
+                    max_turns_limit: 50,
+                    duration_ms: executionData.duration_ms || 0,
+                    duration_seconds: Math.round((executionData.duration_ms || 0) / 1000),
+                    cost_usd: executionData.total_cost_usd || 0,
+                    status: 'failed_max_turns',
+                    failure_reason: executionData.subtype || 'unknown'
+                  },
+                  suggested_complexity: 'L',  // 如果 Medium 失败通常应该是 L
+                  feedback_timestamp: new Date().toISOString(),
+                  actions_run: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+                };
+                
+                // 创建反馈目录
+                const feedbackDir = 'docs/router-feedback';
+                if (!fs.existsSync(feedbackDir)) {
+                  fs.mkdirSync(feedbackDir, { recursive: true });
+                }
+                
+                // 保存反馈数据
+                const feedbackFile = path.join(feedbackDir, `issue-${issueNumber}.json`);
+                fs.writeFileSync(feedbackFile, JSON.stringify(feedbackData, null, 2));
+                
+                console.log(`✅ 反馈数据已保存: ${feedbackFile}`);
+                console.log(`📊 执行指标: ${feedbackData.actual_execution.total_turns} 轮, $${feedbackData.actual_execution.cost_usd}, ${feedbackData.actual_execution.duration_seconds}s`);
+                
+                // 在 Issue 中添加隐藏标记（用于后续分析）
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: ['router-misprediction']
+                });
+                
+                console.log('✅ 已添加 router-misprediction 标签');
+              } else {
+                console.log('ℹ️ 非复杂度误判导致的失败，不收集反馈');
+              }
+            } catch (error) {
+              console.error(`❌ 收集反馈数据失败: ${error.message}`);
+              // 即使收集失败也不影响整体流程
+            }

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批量删除 GitHub Issues</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f6f8fa;
+        }
+        h1 {
+            color: #24292e;
+        }
+        .issue-list {
+            background: white;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .issue-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 3px solid #0366d6;
+            background: #f6f8fa;
+        }
+        .issue-item a {
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .issue-item a:hover {
+            text-decoration: underline;
+        }
+        .actions {
+            margin: 20px 0;
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #22863a;
+        }
+        .danger {
+            background: #d73a49;
+        }
+        .danger:hover {
+            background: #cb2431;
+        }
+    </style>
+</head>
+<body>
+    <h1>批量删除 GitHub Issues</h1>
+    <div class="issue-list">
+        <h2>需要删除的 Issues (共 21 个)</h2>
+        <div id="issue-list"></div>
+    </div>
+    <div class="actions">
+        <button onclick="openAll()">在新标签页中打开所有 Issues</button>
+        <button onclick="openAllDelete()" class="danger">打开所有删除页面（谨慎使用）</button>
+    </div>
+
+    <script>
+        const issues = [231, 228, 227, 226, 225, 224, 223, 222, 221, 220, 219, 218, 217, 216, 215, 214, 213, 212, 211, 210, 208];
+        const repo = 'lessthanno/vibe-engineering-playbook';
+        
+        const issueList = document.getElementById('issue-list');
+        issues.forEach(issue => {
+            const div = document.createElement('div');
+            div.className = 'issue-item';
+            div.innerHTML = `<a href="https://github.com/${repo}/issues/${issue}" target="_blank">Issue #${issue}</a>`;
+            issueList.appendChild(div);
+        });
+
+        function openAll() {
+            issues.forEach(issue => {
+                window.open(`https://github.com/${repo}/issues/${issue}`, '_blank');
+            });
+        }
+
+        function openAllDelete() {
+            if (!confirm('确定要打开所有删除页面吗？这将打开 21 个新标签页！')) {
+                return;
+            }
+            issues.forEach(issue => {
+                // 注意：GitHub 的删除页面 URL 可能需要手动点击删除按钮
+                // 这里直接打开 issue 页面，用户需要手动点击删除按钮
+                window.open(`https://github.com/${repo}/issues/${issue}`, '_blank');
+            });
+        }
+    </script>
+</body>
+</html>

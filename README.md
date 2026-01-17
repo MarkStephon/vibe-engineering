@@ -222,8 +222,6 @@ vibe-engineering-playbook/
 │   ├── prompts/           # 9 个 AI Prompt 模板
 │   │   ├── agents/        # Agent Prompt 模板
 │   │   └── router/         # 路由 Prompt 模板
-│   └── config/            # 配置文件
-│       └── workflow-config.json  # 中央配置文件
 │
 ├── backend/               # Go 后端
 │   ├── cmd/server/        # 入口文件
@@ -563,7 +561,6 @@ NEXT_PUBLIC_API_URL=https://your-backend.railway.app
   - 当前保留 **14 个有效 workflow**、**4 个 Actions**、**9 个 Prompt 模板**
 - ✅ **工作流优化**：
   - 新增可复用 Composite Actions：`openrouter-api`, `load-prompt`, `context-discovery`
-  - 新增中央配置文件 `.github/config/workflow-config.json`
   - 重构多个工作流：从配置文件读取配置，添加重试机制
 
 ### 2026-01

@@ -77,7 +77,17 @@
       "Bash(for i in 239 240 241 242 243 244 245)",
       "Bash(npm run build:*)",
       "Bash(git checkout:*)",
-      "Bash(gh pr create:*)"
+      "Bash(gh pr create:*)",
+      "Bash(git fetch:*)",
+      "Bash(for i in 248 249 250 251 252 253 254)",
+      "Bash(do echo \"=== Issue #$i ===\")",
+      "Bash(gh pr merge:*)",
+      "Bash(for:*)",
+      "Bash(gh workflow list:*)",
+      "Bash(do gh issue view $i --repo lessthanno/vibe-engineering-playbook --json number,title,state --jq '[.number, .state, .title] | @tsv')",
+      "Bash(sort:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(node --check:*)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-name: Weekly Maintenance
+name: Daily Maintenance - 每日仓库维护
 
 on:
   schedule:

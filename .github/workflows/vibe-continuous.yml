@@ -1,9 +1,9 @@
-name: Vibe Continuous - 24小时自动迭代引擎
+name: Vibe Continuous - 任务监控与自动迭代引擎
 
 on:
-  # 每天早上9点运行一次 (UTC 时间 1:00 = 北京时间 9:00)
+  # 每 24 小时检查一次（24 小时自动迭代）
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 0 * * *'
   # 支持手动触发
   workflow_dispatch:
     inputs:
@@ -14,13 +14,20 @@ on:
       mode:
         description: '运行模式'
         required: true
-        default: 'scan'
+        default: 'auto'
         type: choice
         options:
-          - scan        # 扫描所有进行中的 issue
-          - check       # 检测指定 issue 完成度
-          - continue    # 继续处理未完成任务
-          - verify      # 验收模式：检测完成度，通过则关闭 issue
+          - auto          # 自动模式：scan + clean-stale + retry-failed
+          - scan          # 扫描所有进行中的 issue
+          - check         # 仅检测状态，不做任何操作
+          - continue      # 继续处理未完成任务
+          - verify        # 验收模式：检测完成度，通过则关闭 issue
+          - clean-stale   # 清理超时任务（标记为 stale）
+          - retry-failed  # 重试失败的任务
+
+concurrency:
+  group: vibe-continuous
+  cancel-in-progress: false
 
 jobs:
   continuous-iteration:
@@ -44,6 +51,6 @@ jobs:
               github,
               context,
               core,
-              mode: '${{ github.event.inputs.mode }}' || 'scan',
+              mode: '${{ github.event.inputs.mode }}' || 'auto',
               specificIssue: '${{ github.event.inputs.issue_number }}'
             });

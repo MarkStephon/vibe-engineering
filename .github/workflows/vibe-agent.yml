@@ -36,6 +36,7 @@ jobs:
   # Job 1: 解析命令
   # ============================================================
   parse-command:
+    if: github.event.issue.pull_request == null
     runs-on: ubuntu-latest
     outputs:
       agent_type: ${{ steps.parse.outputs.agent_type }}

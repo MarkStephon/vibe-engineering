@@ -8,12 +8,15 @@ const fs = require('fs');
 
 module.exports = async ({ github, context, core, mode, specificIssue }) => {
   const now = new Date();
+  const rawMode = (mode || '').trim();
+  const schedule = context?.payload?.schedule || '';
+  const resolvedMode = rawMode || (context.eventName === 'schedule' ? 'auto' : 'scan');
 
   console.log("=".repeat(60));
   console.log("🔄 VIBE CONTINUOUS - 24小时自动迭代引擎");
   console.log("=".repeat(60));
   console.log(`时间: ${now.toISOString()}`);
-  console.log(`模式: ${mode}`);
+  console.log(`模式: ${resolvedMode}${schedule ? ` (schedule: ${schedule})` : ''}`);
   if (specificIssue) console.log(`指定 Issue: #${specificIssue}`);
 
   // 防重复机制：检查是否有同一任务正在运行
@@ -57,6 +60,11 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
       continuous: {
         check_interval_hours: 1,
         max_iterations_per_issue: 10
+      },
+      monitor: {
+        stale_threshold_hours: 4,
+        retry_limit: 3,
+        retry_interval_minutes: 30
       }
     };
   }
@@ -531,6 +539,7 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
   // 重试失败任务
   async function handleFailedIssues() {
     const RETRY_LIMIT = config.monitor?.retry_limit || 3;
+    const RETRY_INTERVAL_MINUTES = config.monitor?.retry_interval_minutes || 30;
 
     const { data: allIssues } = await github.rest.issues.listForRepo({
       owner: context.repo.owner,
@@ -549,6 +558,13 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
 
       if (retryCount >= RETRY_LIMIT) {
         console.log(`  ⏭️ #${issue.number}: 已达重试上限 (${retryCount}/${RETRY_LIMIT})`);
+        continue;
+      }
+
+      const updatedAt = new Date(issue.updated_at);
+      const minutesSinceUpdate = (now - updatedAt) / (1000 * 60);
+      if (minutesSinceUpdate < RETRY_INTERVAL_MINUTES) {
+        console.log(`  ⏳ #${issue.number}: 距上次更新仅 ${minutesSinceUpdate.toFixed(1)} 分钟，跳过重试`);
         continue;
       }
 
@@ -605,16 +621,28 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
   // ============ 主逻辑 ============
 
   // 处理监控模式
-  if (mode === 'clean-stale') {
+  if (resolvedMode === 'clean-stale') {
     const count = await handleStaleIssues();
     console.log(`\n✅ 已处理 ${count} 个超时任务`);
     return { stale_cleaned: count };
   }
 
-  if (mode === 'retry-failed') {
+  if (resolvedMode === 'retry-failed') {
     const count = await handleFailedIssues();
     console.log(`\n✅ 已重试 ${count} 个失败任务`);
     return { retried: count };
+  }
+
+  const isAutoMode = resolvedMode === 'auto';
+  const mainMode = isAutoMode ? 'scan' : resolvedMode;
+
+  if (isAutoMode && !specificIssue) {
+    console.log('\n🧭 AUTO 模式：先清理超时，再重试失败任务');
+    const staleCount = await handleStaleIssues();
+    const retryCount = await handleFailedIssues();
+    console.log(`\n✅ AUTO 预处理完成：清理 ${staleCount} 个超时任务，重试 ${retryCount} 个失败任务`);
+  } else if (isAutoMode && specificIssue) {
+    console.log('\n🧭 AUTO 模式（指定 Issue）：跳过全局清理/重试');
   }
 
   // 原有的迭代逻辑
@@ -665,14 +693,14 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
         labels: ['✅ verified']
       });
 
-      if (mode === 'verify') {
+      if (mainMode === 'verify') {
         await handleVerified(issue, evaluation);
       }
 
-    } else if (evaluation.should_continue && (mode === 'scan' || mode === 'continue')) {
+    } else if (evaluation.should_continue && (mainMode === 'scan' || mainMode === 'continue')) {
       const triggered = await triggerContinuation(issue, evaluation);
       if (triggered) results.continued++;
-    } else if (mode === 'verify') {
+    } else if (mainMode === 'verify') {
       console.log(`  ❌ 验收未通过，完成度: ${evaluation.completion_percentage}%`);
 
       await github.rest.issues.createComment({
@@ -689,7 +717,7 @@ module.exports = async ({ github, context, core, mode, specificIssue }) => {
         labels: ['needs-review']
       });
     } else {
-      console.log(`  ℹ️ 完成度: ${evaluation.completion_percentage}% (模式: ${mode})`);
+      console.log(`  ℹ️ 完成度: ${evaluation.completion_percentage}% (模式: ${mainMode})`);
     }
   }
 

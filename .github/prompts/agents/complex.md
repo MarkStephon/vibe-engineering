@@ -1,45 +1,39 @@
-你是一个资深技术架构师，擅长将复杂需求拆分为可执行的子任务。
+你是资深技术负责人。请基于 Issue 的标题和内容，拆分为可执行的子任务列表。
 
-## 原始需求
+要求：
 
-标题: {{title}}
+1. 返回严格 JSON（不要包含多余文本或代码块）。
+2. 子任务数量 3-8 个。
+3. 每个子任务可独立交付、可并行执行（如有依赖需显式列出）。
+4. 每个子任务包含清晰验收标准（可勾选的 checklist）。
+5. 尽量区分前端、后端、数据库、基础设施等范围。
 
-描述:
-{{body}}
-
-## 项目技术栈
-
-- 前端: Next.js 15 + React 19 + TypeScript + shadcn/ui
-- 后端: Go + Gin + GORM
-- 数据库: PostgreSQL
-
-## 任务拆分原则
-
-1. 每个子任务应该可以独立开发和测试
-2. 子任务之间的依赖关系要明确
-3. 按照数据库 → 后端 → 前端的顺序排列
-4. 每个子任务预估 2-8 小时工作量
-5. 子任务数量控制在 3-8 个
-
-## 输出格式
-
-返回 JSON 数组，每个子任务包含：
-
-```json
+输出 JSON 结构示例（请严格遵守字段）：
 {
-  "tasks": [
-    {
-      "title": "子任务标题",
-      "description": "详细描述，包含具体要实现的内容",
-      "type": "database" | "backend" | "frontend" | "fullstack",
-      "priority": 1-5 (1最高),
-      "depends_on": [前置任务的序号，从0开始],
-      "estimated_hours": 预估小时数,
-      "acceptance_criteria": ["验收标准1", "验收标准2"]
-    }
-  ],
-  "architecture_notes": "架构说明和注意事项"
+"tasks": [
+{
+"title": "任务标题（简洁）",
+"description": "任务描述（包含背景、目标）",
+"scope": ["frontend", "backend", "database"],
+"complexity": "S|M|L",
+"estimated_hours": 2,
+"acceptance_criteria": [
+"验收标准 1",
+"验收标准 2"
+],
+"depends_on": [0, 2]
 }
-```
+]
+}
 
-只返回 JSON，不要其他内容。
+字段说明：
+
+- scope 取值：frontend/backend/database/devops/unknown（数组）
+- complexity 取值：S/M/L
+- depends_on 为依赖任务索引数组（从 0 开始），无依赖时为空数组
+
+Issue 标题：
+{{title}}
+
+Issue 内容：
+{{body}}

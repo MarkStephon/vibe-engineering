@@ -75,6 +75,7 @@
 - 直接开始编码，不进行需求分析
 - 适合单文件修改、bug 修复、样式调整
 - 最大 30 轮对话
+- 若 PR 的 CI 失败，会自动触发修复流程并保持 Issue 打开
 
 **使用场景**:
 
@@ -99,6 +100,7 @@
 - 两阶段处理：先分析需求，再开发实现
 - 适合涉及 2-5 个文件的新功能
 - 最大 50 轮对话
+- 若 PR 的 CI 失败，会自动触发修复流程并保持 Issue 打开
 
 **使用场景**:
 
@@ -194,7 +196,30 @@
 
 ## 监控工作流
 
-### 8. Fix PR Build Errors (`fix-pr.yml`)
+### 8. Vibe Continuous (`vibe-continuous.yml`) ⭐ 统一监控
+
+**功能**: 任务监控与自动迭代引擎（合并了原 vibe-monitor 功能）
+
+**触发方式**:
+
+- 每 24 小时自动运行（24 小时自动迭代）
+- 手动触发
+
+**运行模式**:
+
+| 模式           | 说明                                                |
+| -------------- | --------------------------------------------------- |
+| `auto`         | 自动模式：scan + clean-stale + retry-failed（默认） |
+| `scan`         | 扫描所有进行中的 issue                              |
+| `check`        | 仅检测状态，不做任何操作                            |
+| `continue`     | 继续处理未完成任务                                  |
+| `verify`       | 验收模式：检测完成度，通过则关闭 issue              |
+| `clean-stale`  | 清理超时任务（标记为 stale）                        |
+| `retry-failed` | 重试失败的任务                                      |
+
+---
+
+### 9. Fix PR Build Errors (`fix-pr.yml`)
 
 **功能**: 修复 PR 中的构建错误。
 
@@ -202,17 +227,9 @@
 
 ---
 
-### 9. Vercel Status Monitor (`vercel-status-monitor.yml`)
+### 10. Vercel Status Monitor (`vercel-status-monitor.yml`)
 
 **功能**: 监控 Vercel 部署状态并更新 Issue/PR。
-
----
-
-### 10. Vibe Monitor (`vibe-monitor.yml`)
-
-**功能**: 监控任务状态，自动检测超时和失败任务。
-
-**触发方式**: 每小时自动运行
 
 ---
 
@@ -220,7 +237,11 @@
 
 ### 11. Issue Manager (`issue-manager.yml`)
 
-**功能**: 自动管理 Issue，包括标签和欢迎消息。
+**功能**: Issue 欢迎消息与自动标签。
+
+**触发方式**: Issue 创建时自动触发
+
+**自动标签**: 根据 Issue 内容自动添加 `frontend`、`backend`、`bug`、`enhancement` 标签
 
 ---
 
@@ -230,9 +251,11 @@
 
 ---
 
-### 13. Weekly Maintenance (`weekly-maintenance.yml`)
+### 13. Daily Maintenance (`daily-maintenance.yml`)
 
-**功能**: 每周仓库维护，检查依赖、安全漏洞等。
+**功能**: 每日仓库维护，检查依赖、安全漏洞等。
+
+**触发方式**: 每天北京时间凌晨 3:00 自动运行
 
 ---
 
@@ -241,18 +264,21 @@
 **功能**: 自动检查后端 API 错误处理是否符合规范，在 PR 合并前进行验证。
 
 **触发条件**:
-- **仅当 PR 包含 `backend/**/*.go` 文件变更时**自动触发
+
+- **仅当 PR 包含 `backend/**/\*.go` 文件变更时\*\*自动触发
 - 手动触发（workflow_dispatch）
 
 **注意**: 此工作流只检查后端代码，前端和其他代码变更不会触发此检查。
 
 **检查项**:
+
 1. ✅ 是否使用了标准化的 `models.ErrorResponse` 格式（而不是 `gin.H`）
 2. ✅ 是否正确处理了 `gorm.ErrRecordNotFound` 错误
 3. ✅ 错误日志是否包含了必要的字段（`error_code`, `request_id`）
 4. ✅ 404 错误是否返回了正确的错误码（如 `ANALYSIS_NOT_FOUND`, `INSIGHT_NOT_FOUND`）
 
 **输出**:
+
 - 在 PR 中自动评论检查结果
 - 如果有错误，PR 检查会失败，阻止合并
 
@@ -355,60 +381,27 @@
 
 项目提供可复用的 Composite Actions，用于减少工作流代码重复：
 
-#### 1. Update Issue Status (`/.github/actions/update-issue-status/action.yml`)
-
-统一的 Issue 状态标签管理：
-
-```yaml
-- uses: ./.github/actions/update-issue-status
-  with:
-    issue_number: ${{ github.event.issue.number }}
-    status: processing # processing | completed | failed | stale | deployed | needs_review
-    github_token: ${{ secrets.GITHUB_TOKEN }}
-    add_comment: "true" # 可选
-    comment_body: "状态更新消息" # 可选
-```
-
-特点：
-
-- 自动清理其他状态标签，确保状态互斥
-- 标签定义与 `workflow-config.json` 保持一致
-- 支持可选的状态评论
-
-#### 2. OpenRouter API (`/.github/actions/openrouter-api/action.yml`)
-
-带重试机制的 OpenRouter API 客户端：
-
-```yaml
-- uses: ./.github/actions/openrouter-api
-  with:
-    api_key: ${{ secrets.OPENROUTER_API_KEY }}
-    model: google/gemini-2.0-flash-001
-    prompt: "你的 prompt 内容"
-    json_mode: "true"
-    max_retries: "3"
-```
-
-特点：
-
-- 指数退避重试（支持 429 Rate Limit 和 5xx 错误）
-- 自动处理 Retry-After 头
-- JSON 模式支持
-
-#### 3. Load Prompt (`/.github/actions/load-prompt/action.yml`)
+#### 1. Load Prompt (`/.github/actions/load-prompt/action.yml`)
 
 从模板文件加载并渲染 Prompt：
 
 ```yaml
 - uses: ./.github/actions/load-prompt
   with:
-    prompt_path: .github/prompts/agents/vibe/fe-codegen.md
+    template: agents/vibe/fe-codegen.md
     variables: '{"requirement": "...", "project_context": "..."}'
 ```
 
-#### 4. Context Discovery (`/.github/actions/context-discovery/action.yml`)
+#### 2. Context Discovery (`/.github/actions/context-discovery/action.yml`)
 
-自动发现项目上下文（技术栈、目录结构等）
+自动发现项目上下文（技术栈、目录结构等）：
+
+```yaml
+- uses: ./.github/actions/context-discovery
+  with:
+    requirement: "需求描述"
+    target: frontend # 或 backend
+```
 
 ### 配置文件
 
@@ -470,41 +463,44 @@
 
 ```
 .github/
-├── actions/                      # 可复用 Composite Actions
-│   ├── update-issue-status/      # Issue 状态标签管理
-│   ├── openrouter-api/           # OpenRouter API 客户端
+├── actions/                      # 可复用 Composite Actions (2 个)
 │   ├── load-prompt/              # Prompt 模板加载器
 │   └── context-discovery/        # 项目上下文发现
 ├── config/
 │   └── workflow-config.json      # 中央配置文件
-├── prompts/                      # AI Agent Prompt 模板
+├── prompts/                      # AI Agent Prompt 模板 (9 个)
 │   ├── router/
 │   │   └── complexity-analyzer.md
 │   └── agents/
 │       ├── simple.md             # 简单任务 Agent
 │       ├── medium.md             # 中等任务 Agent
-│       ├── complex.md            # 复杂任务 Agent
 │       └── vibe/                 # Vibe Agent 专用
 │           ├── pm-compiler.md    # PM 需求编译
 │           ├── ui-spec.md        # UI 规格生成
 │           ├── be-contract.md    # 后端契约定义
 │           ├── be-codegen.md     # 后端代码生成
 │           └── fe-codegen.md     # 前端代码生成 (含 Base.org 设计系统)
-├── workflows/                    # GitHub Actions 工作流
+├── scripts/                      # 独立脚本文件 (3 个)
+│   ├── vibe-continuous.js        # 自动迭代引擎脚本
+│   ├── vibe-router.js            # 复杂度路由脚本
+│   └── agent-utils.js            # Agent 共享工具函数
+├── workflows/                    # GitHub Actions 工作流 (16 个)
 │   ├── vibe-agent.yml            # 主 Agent 入口
-│   ├── vibe-router.yml           # 复杂度路由
-│   ├── vibe-monitor.yml          # 任务监控
+│   ├── vibe-router.yml           # 复杂度路由（使用 vibe-router.js）
+│   ├── vibe-continuous.yml       # 任务监控与自动迭代（使用 vibe-continuous.js）
 │   ├── agent-simple.yml          # 简单任务处理
 │   ├── agent-medium.yml          # 中等任务处理
 │   ├── agent-complex.yml         # 复杂任务拆分
 │   ├── auto-trigger-frontend.yml # 后端完成后触发前端
 │   ├── feature-branch-manager.yml # 功能分支管理
+│   ├── dependency-chain-trigger.yml # 任务依赖链触发
 │   ├── fix-pr.yml                # PR 构建错误修复
-│   ├── issue-manager.yml         # Issue 自动管理
+│   ├── check-api-error-handling.yml # API 错误处理检查
+│   ├── issue-manager.yml         # Issue 欢迎消息与自动标签
 │   ├── parent-child-issue-guard.yml # 父子 Issue 关系守护
 │   ├── update-prd-status.yml     # PRD 状态更新
 │   ├── vercel-status-monitor.yml # Vercel 部署监控
-│   ├── weekly-maintenance.yml    # 每周维护任务
+│   ├── daily-maintenance.yml     # 每日维护任务
 │   └── README.md                 # 本文档
 └── AGENT_GUIDE.md                # Agent 使用指南
 
@@ -517,7 +513,39 @@ docs/
 
 ## 更新日志
 
-- **2026-01-17** (最新更新):
+- **2026-01-16** (结构优化 - 第四阶段):
+  - ✅ **提取共享工具函数**：
+    - 新增 `scripts/agent-utils.js`：Agent 共享工具函数
+    - 包含：进度更新、标签管理、PR 查找、重复检查、错误分析等
+  - 当前保留 **16 个 workflow**、**2 个 actions**、**9 个 prompts**、**3 个脚本**
+
+- **2026-01-16** (结构优化 - 第三阶段):
+  - ✅ **清理未使用的资源**：
+    - 删除 `prompts/agents/complex.md`（未被 agent-complex.yml 使用）
+    - 删除 `actions/openrouter-api/`（未被任何 workflow 使用）
+    - 删除 `actions/update-issue-status/`（未被任何 workflow 使用）
+
+- **2026-01-16** (结构优化 - 第二阶段):
+  - ✅ **提取内联脚本到独立文件**：
+    - 新增 `scripts/vibe-router.js`：复杂度路由逻辑
+    - `vibe-router.yml` 从 270+ 行简化到 114 行
+  - ✅ **清理冗余功能**：
+    - 删除 `issue-manager.yml` 中的 `/clean-stale` 命令（已被 `vibe-continuous` 的 `clean-stale` 模式替代）
+    - 简化 `issue-manager.yml` 触发条件（仅在 Issue 创建时触发）
+
+- **2026-01-16** (结构优化 - 第一阶段):
+  - ✅ **删除冗余 workflow**：
+    - 删除 `auto-trigger-agent.yml`（功能与 `vibe-router.yml` 重复）
+    - 删除 `vibe-monitor.yml`（功能合并到 `vibe-continuous.yml`）
+  - ✅ **合并 vibe-monitor 到 vibe-continuous**：
+    - 新增 `clean-stale` 模式：清理超时任务
+    - 新增 `retry-failed` 模式：重试失败任务
+    - 改为每小时自动运行
+  - ✅ **重命名 workflow**：
+    - `weekly-maintenance.yml` → `daily-maintenance.yml`（名称与实际频率一致）
+  - 当前保留 **16 个有效 workflow**、**2 个独立脚本**
+
+- **2026-01-17**:
   - ✅ **Prompt 模板化完成**：所有 workflow 中的 prompt 已提取为独立模板文件
     - `vibe-agent.yml` 使用 `load-prompt` Action 加载模板
     - 支持变量替换，便于维护和版本控制
@@ -582,7 +610,6 @@ docs/
   - 新增 `parent-child-issue-guard.yml`：管理父子 Issue 关系
   - 新增 `update-prd-status.yml`：自动更新 PRD Issue 状态
   - 新增 `check-api-error-handling.yml`：自动检查 API 错误处理规范
-  - 实现 AI 对话面板 (Chat Console) 前端功能
 
 - **2024-2025**:
   - 初始版本，包含所有核心工作流
