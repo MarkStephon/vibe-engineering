@@ -122,10 +122,25 @@ func (s *ChatService) GetChatHistory(ctx context.Context, analysisID uint) (*mod
 
 // AnalyzeEntities analyzes the content and returns detected entities and suggestions.
 func (s *ChatService) AnalyzeEntities(ctx context.Context, insightID uint) (*models.AnalyzeEntitiesResponse, error) {
+	s.log.Info("Starting entity analysis",
+		zap.Uint("insight_id", insightID),
+	)
+
 	insight, err := s.insightRepo.GetByID(ctx, insightID)
 	if err != nil {
+		s.log.Error("Failed to fetch insight",
+			zap.Uint("insight_id", insightID),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("insight not found: %w", err)
 	}
+
+	s.log.Debug("Insight data retrieved",
+		zap.Uint("insight_id", insightID),
+		zap.String("title", insight.Title),
+		zap.String("author", insight.Author),
+		zap.Int("summary_length", len(insight.Summary)),
+	)
 
 	// Build prompt for entity extraction
 	prompt := fmt.Sprintf(`分析以下内容，提取所mentioned的股票、加密货币、公司等实体。
@@ -146,23 +161,41 @@ func (s *ChatService) AnalyzeEntities(ctx context.Context, insightID uint) (*mod
 
 只返回JSON，不要其他文字。`, insight.Title, insight.Author, insight.Summary)
 
+	s.log.Debug("Calling OpenRouter API",
+		zap.Uint("insight_id", insightID),
+		zap.String("model", s.chatModel),
+	)
+
 	response, err := s.callOpenRouter(ctx, prompt)
 	if err != nil {
 		s.log.Error("Failed to analyze entities",
 			zap.Uint("insight_id", insightID),
+			zap.String("model", s.chatModel),
 			zap.Error(err),
 		)
 		return nil, fmt.Errorf("failed to call AI service: %w", err)
 	}
 
+	s.log.Debug("OpenRouter API response received",
+		zap.Uint("insight_id", insightID),
+		zap.Int("response_length", len(response)),
+	)
+
 	// Parse response
 	var result models.AnalyzeEntitiesResponse
 	cleanedResponse := s.cleanJSONResponse(response)
+	
+	s.log.Debug("Cleaned JSON response",
+		zap.Uint("insight_id", insightID),
+		zap.String("cleaned_response", cleanedResponse),
+	)
+
 	if err := json.Unmarshal([]byte(cleanedResponse), &result); err != nil {
 		s.log.Error("Failed to parse entity response",
 			zap.Uint("insight_id", insightID),
 			zap.Error(err),
-			zap.String("response", cleanedResponse),
+			zap.String("raw_response", response),
+			zap.String("cleaned_response", cleanedResponse),
 		)
 		return nil, fmt.Errorf("failed to parse AI response: %w", err)
 	}
@@ -174,6 +207,12 @@ func (s *ChatService) AnalyzeEntities(ctx context.Context, insightID uint) (*mod
 	if result.Suggestions == nil {
 		result.Suggestions = []models.Suggestion{}
 	}
+
+	s.log.Info("Entity analysis completed successfully",
+		zap.Uint("insight_id", insightID),
+		zap.Int("entities_count", len(result.Entities)),
+		zap.Int("suggestions_count", len(result.Suggestions)),
+	)
 
 	return &result, nil
 }
@@ -261,7 +300,13 @@ func (s *ChatService) streamFromOpenRouter(ctx context.Context, messages []map[s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		s.log.Error("OpenRouter API error", zap.Int("status", resp.StatusCode))
+		var errorBody bytes.Buffer
+		errorBody.ReadFrom(resp.Body)
+		s.log.Error("OpenRouter streaming API error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", errorBody.String()),
+			zap.Uint("insight_id", insightID),
+		)
 		responseChan <- models.ChatStreamEvent{Done: true}
 		return
 	}
@@ -368,16 +413,36 @@ func (s *ChatService) callOpenRouter(ctx context.Context, prompt string) (string
 	}
 	defer resp.Body.Close()
 
+	// Check HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		var errorBody bytes.Buffer
+		errorBody.ReadFrom(resp.Body)
+		s.log.Error("OpenRouter API returned error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", errorBody.String()),
+		)
+		return "", fmt.Errorf("OpenRouter API error: status %d, body: %s", resp.StatusCode, errorBody.String())
+	}
+
 	var response struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		} `json:"error"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Check for API-level errors
+	if response.Error != nil {
+		return "", fmt.Errorf("OpenRouter API error: %s (code: %s)", response.Error.Message, response.Error.Code)
 	}
 
 	if len(response.Choices) == 0 {
