@@ -19,7 +19,7 @@ export default function InsightsPage() {
       {/* Left Sidebar - Memory Rail */}
       <aside
         className={cn(
-          "w-80 border-r border-border/50 flex-shrink-0",
+          "w-80 border-r border-border/50 flex-shrink-0 overflow-hidden",
           "hidden md:block"
         )}
       >

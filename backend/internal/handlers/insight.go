@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -127,9 +128,66 @@ func (h *InsightHandler) Create(c *gin.Context) {
 		req.TargetLang = "zh"
 	}
 
+	// Extract source ID from URL to check for duplicates
+	sourceID := extractSourceID(req.SourceURL)
+	
+	// Check for existing insight - first by source_id, then by source_url
+	var existingInsight *models.Insight
+	var err error
+	
+	if sourceID != "" {
+		existingInsight, err = h.repo.GetBySourceID(c.Request.Context(), sourceID, userID)
+	}
+	
+	// If not found by source_id, try by source_url (for old records without source_id)
+	if existingInsight == nil || err != nil {
+		existingInsight, err = h.repo.GetBySourceURL(c.Request.Context(), req.SourceURL, userID)
+	}
+	
+	if err == nil && existingInsight != nil {
+		// Found existing record
+		if existingInsight.Status == models.InsightStatusCompleted {
+			// Already processed successfully, return the existing record
+			h.log.Info("Returning existing insight (already processed)",
+				zap.Uint("insight_id", existingInsight.ID),
+				zap.String("source_url", req.SourceURL),
+			)
+			c.JSON(http.StatusOK, gin.H{
+				"data": models.CreateInsightResponse{
+					ID:      existingInsight.ID,
+					Status:  existingInsight.Status,
+					Message: "该内容已解析过，直接返回已有记录",
+				},
+				"existing": true,
+			})
+			return
+		} else if existingInsight.Status == models.InsightStatusProcessing {
+			// Still processing, return current status
+			h.log.Info("Insight is still processing",
+				zap.Uint("insight_id", existingInsight.ID),
+				zap.String("source_url", req.SourceURL),
+			)
+			c.JSON(http.StatusOK, gin.H{
+				"data": models.CreateInsightResponse{
+					ID:      existingInsight.ID,
+					Status:  existingInsight.Status,
+					Message: "该内容正在解析中，请稍候",
+				},
+				"existing": true,
+			})
+			return
+		}
+		// If status is pending or failed, allow reprocessing by continuing to create new record
+		h.log.Info("Found existing insight with status, will reprocess",
+			zap.Uint("insight_id", existingInsight.ID),
+			zap.String("status", string(existingInsight.Status)),
+		)
+	}
+
 	insight := &models.Insight{
 		UserID:     userID,
 		SourceURL:  req.SourceURL,
+		SourceID:   sourceID,
 		TargetLang: req.TargetLang,
 		Status:     models.InsightStatusPending,
 	}
@@ -157,6 +215,33 @@ func (h *InsightHandler) Create(c *gin.Context) {
 			Message: "Insight 创建成功，正在处理中",
 		},
 	})
+}
+
+// extractSourceID extracts the source ID from a URL (e.g., YouTube video ID)
+func extractSourceID(sourceURL string) string {
+	// YouTube URL patterns:
+	// - https://www.youtube.com/watch?v=VIDEO_ID
+	// - https://youtu.be/VIDEO_ID
+	// - https://www.youtube.com/embed/VIDEO_ID
+	// - https://youtube.com/shorts/VIDEO_ID
+	
+	patterns := []string{
+		`youtube\.com/watch\?.*v=([a-zA-Z0-9_-]{11})`,
+		`youtu\.be/([a-zA-Z0-9_-]{11})`,
+		`youtube\.com/embed/([a-zA-Z0-9_-]{11})`,
+		`youtube\.com/shorts/([a-zA-Z0-9_-]{11})`,
+		`youtube\.com/v/([a-zA-Z0-9_-]{11})`,
+	}
+	
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindStringSubmatch(sourceURL)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+	}
+	
+	return ""
 }
 
 // Update updates an existing insight.

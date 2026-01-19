@@ -143,6 +143,19 @@ func (r *InsightRepository) GetBySourceID(ctx context.Context, sourceID string, 
 	return &insight, nil
 }
 
+// GetBySourceURL returns an insight by source URL and user ID.
+func (r *InsightRepository) GetBySourceURL(ctx context.Context, sourceURL string, userID uint) (*models.Insight, error) {
+	var insight models.Insight
+	err := r.db.WithContext(ctx).
+		Where("source_url = ? AND user_id = ?", sourceURL, userID).
+		Order("created_at DESC").
+		First(&insight).Error
+	if err != nil {
+		return nil, err
+	}
+	return &insight, nil
+}
+
 // GetByShareToken returns an insight by share token.
 func (r *InsightRepository) GetByShareToken(ctx context.Context, token string) (*models.Insight, error) {
 	var insight models.Insight

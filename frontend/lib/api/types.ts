@@ -99,6 +99,11 @@ export interface CreateInsightResponse {
   message: string;
 }
 
+export interface CreateInsightApiResponse {
+  data: CreateInsightResponse;
+  existing?: boolean;
+}
+
 /**
  * Transcript item with timestamp
  */

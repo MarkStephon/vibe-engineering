@@ -121,9 +121,10 @@ export const insightApi = {
   /**
    * Create a new insight parsing task
    * @param data - Insight creation data
+   * @returns Response with data and optional existing flag
    */
   createInsight: (data: CreateInsightRequest) =>
-    apiClient.post<CreateInsightResponse>("/v1/insights", data),
+    apiClient.post<import("./types").CreateInsightApiResponse>("/v1/insights", data),
 
   /**
    * Get insight detail by ID
@@ -140,6 +141,13 @@ export const insightApi = {
     apiClient.post<{ status: string; message: string }>(
       `/v1/insights/${id}/process`
     ),
+
+  /**
+   * Delete an insight
+   * @param id - Insight ID
+   */
+  deleteInsight: (id: number) =>
+    apiClient.delete<{ message: string }>(`/v1/insights/${id}`),
 
   /**
    * Get all highlights for an insight

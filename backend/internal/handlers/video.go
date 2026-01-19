@@ -597,3 +597,72 @@ func (h *VideoHandler) generateMarkdown(
 
 	return md
 }
+
+// DeleteAnalysis deletes a video analysis record.
+// DELETE /api/v1/videos/:id
+func (h *VideoHandler) DeleteAnalysis(c *gin.Context) {
+	// Get analysis ID from URL parameter
+	var uri struct {
+		ID uint `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "INVALID_REQUEST",
+			"message": "无效的分析ID",
+		})
+		return
+	}
+
+	// TODO: Get user ID from JWT token and verify ownership
+	// For now, we'll allow deletion without ownership check
+	// userID := uint(1)
+
+	// Get analysis to verify it exists
+	analysis, err := h.repo.GetAnalysisByID(c.Request.Context(), uri.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    "NOT_FOUND",
+				"message": "分析记录不存在",
+			})
+			return
+		}
+		h.log.Error("Failed to get analysis", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    "INTERNAL_ERROR",
+			"message": "删除失败",
+		})
+		return
+	}
+
+	// TODO: Verify user owns this analysis
+	// if analysis.UserID != userID {
+	// 	c.JSON(http.StatusForbidden, gin.H{
+	// 		"code":    "FORBIDDEN",
+	// 		"message": "无权删除此记录",
+	// 	})
+	// 	return
+	// }
+
+	// Delete the analysis and all related records
+	if err := h.repo.DeleteAnalysis(c.Request.Context(), uri.ID); err != nil {
+		h.log.Error("Failed to delete analysis",
+			zap.Error(err),
+			zap.Uint("analysis_id", uri.ID),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    "INTERNAL_ERROR",
+			"message": "删除失败",
+		})
+		return
+	}
+
+	h.log.Info("Analysis deleted successfully",
+		zap.Uint("analysis_id", uri.ID),
+		zap.String("video_id", analysis.VideoID),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "删除成功",
+	})
+}

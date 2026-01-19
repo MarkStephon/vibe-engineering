@@ -77,7 +77,7 @@ export function MemoryRail({
   return (
     <div
       className={cn(
-        "flex flex-col h-full bg-background",
+        "flex flex-col h-full bg-background overflow-hidden",
         className
       )}
     >
@@ -108,7 +108,7 @@ export function MemoryRail({
 
       {/* Insights List */}
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+        <div className="px-2 py-2 space-y-1 overflow-hidden">
           {/* Today Section */}
           <Collapsible
             open={openSections.today}
@@ -134,6 +134,7 @@ export function MemoryRail({
                   insight={insight}
                   isSelected={selectedId === insight.id}
                   onSelect={onSelectInsight}
+                  onDelete={fetchInsights}
                 />
               ))}
               {insights.today.length === 0 && (
@@ -169,6 +170,7 @@ export function MemoryRail({
                   insight={insight}
                   isSelected={selectedId === insight.id}
                   onSelect={onSelectInsight}
+                  onDelete={fetchInsights}
                 />
               ))}
               {insights.yesterday.length === 0 && (
@@ -204,6 +206,7 @@ export function MemoryRail({
                   insight={insight}
                   isSelected={selectedId === insight.id}
                   onSelect={onSelectInsight}
+                  onDelete={fetchInsights}
                 />
               ))}
               {insights.previous.length === 0 && (

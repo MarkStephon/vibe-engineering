@@ -138,6 +138,7 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 				videos.POST("/analyze", videoHandler.AnalyzeVideo)
 				videos.GET("/result/:jobId", videoHandler.GetResult)
 				videos.POST("/export", videoHandler.ExportVideo)
+				videos.DELETE("/:id", videoHandler.DeleteAnalysis)
 			}
 
 			// History routes

@@ -50,7 +50,13 @@ export function NewInsightDialog({
         target_lang: targetLang,
       });
 
-      toast.success(response.message || "解析任务已创建，正在处理中...");
+      // Check if this is an existing record
+      if (response.existing) {
+        toast.info(response.data?.message || "该内容已解析过，直接返回已有记录");
+      } else {
+        toast.success(response.data?.message || "解析任务已创建，正在处理中...");
+      }
+      
       setSourceUrl("");
       setTargetLang("zh");
       onOpenChange(false);

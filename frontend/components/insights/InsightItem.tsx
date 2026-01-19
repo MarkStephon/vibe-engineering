@@ -2,12 +2,16 @@
 
 import { cn } from "@/lib/utils";
 import type { Insight } from "@/lib/api/types";
-import { Youtube, Twitter, Podcast } from "lucide-react";
+import { Youtube, Twitter, Podcast, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { insightApi } from "@/lib/api/endpoints";
+import { toast } from "sonner";
 
 interface InsightItemProps {
   insight: Insight;
   isSelected?: boolean;
   onSelect: (id: number) => void;
+  onDelete?: () => void;
 }
 
 /**
@@ -28,59 +32,96 @@ function getSourceIcon(sourceType: Insight["source_type"]) {
 
 /**
  * InsightItem Component
- * Displays a single insight item in the Memory Rail
+ * Displays a single insight item in the Memory Rail with delete functionality
  */
 export function InsightItem({
   insight,
   isSelected,
   onSelect,
+  onDelete,
 }: InsightItemProps) {
   const Icon = getSourceIcon(insight.source_type);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!confirm("确定要删除这条记录吗？")) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await insightApi.deleteInsight(insight.id);
+      toast.success("删除成功");
+      onDelete?.();
+    } catch (error: any) {
+      console.error("Failed to delete insight:", error);
+      toast.error("删除失败，请重试");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
-    <button
-      onClick={() => onSelect(insight.id)}
+    <div
       className={cn(
-        "w-full text-left px-4 py-3 rounded-lg",
+        "rounded-lg group",
         "transition-colors duration-200",
         "hover:bg-muted/50",
-        "focus:bg-muted/50 focus:outline-none",
         isSelected && "bg-muted"
       )}
     >
-      <div className="flex items-start gap-3">
+      {/* 使用 Grid 布局: 图标(16px) | 内容(自适应) | 操作按钮(28px) */}
+      <div 
+        className="grid items-center px-3 py-2.5"
+        style={{ gridTemplateColumns: '16px 1fr 28px' }}
+      >
         {/* Source Icon */}
-        <div className="flex-shrink-0 mt-0.5">
-          <Icon className="w-4 h-4 text-muted-foreground" />
-        </div>
+        <Icon className="w-4 h-4 text-muted-foreground" />
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
+        {/* Content - clickable area */}
+        <div
+          onClick={() => onSelect(insight.id)}
+          className="cursor-pointer overflow-hidden px-2"
+        >
           <h4 className="text-sm font-medium text-foreground truncate">
             {insight.title}
           </h4>
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">
             {insight.author}
           </p>
         </div>
 
-        {/* Status indicator */}
-        {insight.status === "pending" && (
-          <div className="flex-shrink-0">
+        {/* Delete button */}
+        <div className="flex items-center justify-end gap-1">
+          {/* Status indicator */}
+          {insight.status === "pending" && (
             <div className="w-2 h-2 rounded-full bg-yellow-500" />
-          </div>
-        )}
-        {insight.status === "processing" && (
-          <div className="flex-shrink-0">
+          )}
+          {insight.status === "processing" && (
             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-          </div>
-        )}
-        {insight.status === "failed" && (
-          <div className="flex-shrink-0">
+          )}
+          {insight.status === "failed" && (
             <div className="w-2 h-2 rounded-full bg-red-500" />
-          </div>
-        )}
+          )}
+
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className={cn(
+              "p-1 rounded hover:bg-destructive/10",
+              "text-muted-foreground hover:text-destructive",
+              "transition-colors duration-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
+            title="删除"
+            aria-label="删除记录"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
