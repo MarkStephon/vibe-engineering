@@ -15,7 +15,7 @@ interface InsightCanvasProps {
   insightId: number;
 }
 
-type DisplayMode = "zh" | "en" | "bilingual";
+type DisplayMode = "translated" | "original" | "bilingual";
 
 /**
  * InsightCanvas - Main content display component for Insight details
@@ -25,7 +25,7 @@ export function InsightCanvas({ insightId }: InsightCanvasProps) {
   const [insight, setInsight] = useState<InsightDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("zh");
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("translated");
   const [isReprocessing, setIsReprocessing] = useState(false);
   const playerRef = useRef<{ seekTo: (seconds: number) => void } | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TranscriptItem } from "@/lib/api/types";
 
-type DisplayMode = "zh" | "en" | "bilingual";
+type DisplayMode = "translated" | "original" | "bilingual";
 
 interface TranscriptViewProps {
   transcripts: TranscriptItem[];
@@ -17,9 +17,9 @@ interface TranscriptViewProps {
 }
 
 const displayModeLabels: Record<DisplayMode, string> = {
-  zh: "中文",
-  en: "原文",
-  bilingual: "中英对照",
+  translated: "译文",
+  original: "原文",
+  bilingual: "双语对照",
 };
 
 /**
@@ -97,17 +97,19 @@ function TranscriptLine({
       {/* Timestamp Button */}
       <button
         onClick={() => onTimestampClick(item.seconds)}
-        className="flex-shrink-0 text-xs font-mono text-primary hover:text-primary/80 hover:underline transition-colors pt-0.5"
+        className="shrink-0 text-xs font-mono text-primary hover:text-primary/80 hover:underline transition-colors pt-0.5"
       >
         [{item.timestamp}]
       </button>
 
       {/* Text Content */}
       <div className="flex-1 text-sm text-muted-foreground leading-relaxed">
-        {displayMode === "zh" && (
+        {displayMode === "translated" && (
           <p>{hasTranslation ? item.translated_text : item.text}</p>
         )}
-        {displayMode === "en" && <p>{item.text}</p>}
+        {displayMode === "original" && (
+          <p>{item.text}</p>
+        )}
         {displayMode === "bilingual" && (
           <div className="space-y-1.5">
             <p className="text-foreground">{item.text}</p>
