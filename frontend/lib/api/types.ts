@@ -295,3 +295,39 @@ export interface SharedInsightResponse {
   content: SharedContent;
 }
 
+/**
+ * Translation 相关类型定义
+ */
+
+/**
+ * 翻译请求
+ */
+export interface TranslateRequest {
+  source_text?: string;
+  youtube_url?: string;
+  source_language?: string;
+  target_language: string;
+  enable_dual_subtitles?: boolean;
+}
+
+/**
+ * 双语字幕条目
+ */
+export interface DualSubtitle {
+  original: string;
+  translated: string;
+  start_time?: string;
+  end_time?: string;
+}
+
+/**
+ * 翻译响应
+ */
+export interface TranslateResponse {
+  status: string;
+  message?: string;
+  translated_text?: string;
+  dual_subtitles?: DualSubtitle[];
+  source_language?: string;
+}
+

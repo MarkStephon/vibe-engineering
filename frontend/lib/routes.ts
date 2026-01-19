@@ -11,7 +11,7 @@
  * const navItems = getNavRoutes();
  */
 
-import { LucideIcon, ShieldCheck, Lightbulb, Home } from "lucide-react";
+import { LucideIcon, ShieldCheck, Lightbulb, Home, Languages } from "lucide-react";
 
 /**
  * 路由配置项类型定义
@@ -70,6 +70,15 @@ export const routes: RouteConfig[] = [
     showInNav: true,
     order: 20,
     description: 'AI 灵感解析工作台',
+  },
+  {
+    id: 'translate',
+    label: 'Translate',
+    href: '/translate',
+    icon: Languages,
+    showInNav: true,
+    order: 30,
+    description: 'YouTube 中英对照翻译',
   },
 ];
 

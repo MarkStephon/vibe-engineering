@@ -217,3 +217,15 @@ export const chatApi = {
   analyzeEntities: (analysisId: number) =>
     apiClient.post<EntityAnalysisResult>(`/v1/insights/${analysisId}/analyze-entities`),
 };
+
+/**
+ * Translation API endpoints
+ */
+export const translationApi = {
+  /**
+   * Translate text or YouTube subtitles
+   * @param data - Translation request data
+   */
+  translate: (data: import("./types").TranslateRequest) =>
+    apiClient.post<import("./types").TranslateResponse>("/v1/translate", data),
+};
