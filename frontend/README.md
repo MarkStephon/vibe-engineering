@@ -2,7 +2,7 @@
 
 基于 Next.js、Tailwind CSS 和 shadcn/ui 构建的前端应用。
 
-## 技术栈
+## 技术栈 ---laowang
 
 - **Next.js 16** - React 框架，使用 App Router
 - **TypeScript** - 类型安全
