@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.0.5
 	go.uber.org/zap v1.27.1
+	golang.org/x/image v0.23.0
 	golang.org/x/oauth2 v0.24.0
 	google.golang.org/api v0.205.0
 	gorm.io/datatypes v1.2.7
