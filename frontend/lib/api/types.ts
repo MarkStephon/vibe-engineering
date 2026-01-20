@@ -337,3 +337,63 @@ export interface TranslateResponse {
   source_language?: string;
 }
 
+/**
+ * Image Processing 相关类型定义
+ */
+
+/**
+ * Image upload response
+ */
+export interface ImageUploadResponse {
+  id: string;
+  original_name: string;
+  file_path: string;
+  file_size: number;
+  width: number;
+  height: number;
+  format: string;
+  upload_time: string;
+}
+
+/**
+ * Image processing options
+ */
+export interface ImageProcessingOptions {
+  compression?: {
+    quality: number;
+    target_size?: number;
+  };
+  resize?: {
+    width: number;
+    height: number;
+    keep_aspect_ratio: boolean;
+  };
+}
+
+/**
+ * Processed image response
+ */
+export interface ProcessedImageResponse {
+  processed_id: string;
+  processed_path: string;
+  processed_size: number;
+  processed_width: number;
+  processed_height: number;
+  compression_ratio: number;
+  process_time: string;
+}
+
+/**
+ * Image processing status
+ */
+export type ImageProcessingStatus = "processing" | "completed" | "failed";
+
+/**
+ * Image processing status response
+ */
+export interface ImageProcessingStatusResponse {
+  status: ImageProcessingStatus;
+  progress: number;
+  message: string;
+}
+
