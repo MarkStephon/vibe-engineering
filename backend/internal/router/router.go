@@ -86,6 +86,10 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 	chatService := services.NewChatService(chatRepo, videoRepo, insightRepo, cfg.OpenRouterAPIKey, cfg.GeminiModel, log)
 	chatHandler := handlers.NewChatHandler(chatService, log)
 
+	// Image compression handler (no database required)
+	imageService := services.NewImageService(log)
+	compressHandler := handlers.NewCompressHandler(imageService, log)
+
 	// API routes
 	api := r.Group("/api")
 	{
@@ -106,6 +110,9 @@ func New(cfg *config.Config, db *database.PostgresDB, cache *cache.RedisCache, l
 
 		// Parse routes
 		api.POST("/parse", parseHandler.Parse)
+
+		// Image compression route
+		api.POST("/compress", compressHandler.Compress)
 
 		// Analysis routes
 		analysis := api.Group("/analysis")
