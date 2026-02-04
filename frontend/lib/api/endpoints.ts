@@ -237,3 +237,59 @@ export const translationApi = {
   translate: (data: import("./types").TranslateRequest) =>
     apiClient.post<import("./types").TranslateResponse>("/v1/translate", data),
 };
+
+/**
+ * Image Processing API endpoints
+ */
+export const imageApi = {
+  /**
+   * Upload an image file
+   * @param file - Image file to upload
+   */
+  uploadImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/v1/images/upload`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to upload image");
+    }
+
+    const result = await response.json();
+    return result.data as import("./types").ImageUploadResponse;
+  },
+
+  /**
+   * Process an image (compress and/or resize)
+   * @param imageId - Image ID
+   * @param options - Processing options
+   */
+  processImage: (imageId: string, options: import("./types").ImageProcessingOptions) =>
+    apiClient.post<{ data: import("./types").ProcessedImageResponse }>(
+      `/v1/images/${imageId}/process`,
+      options
+    ).then(res => res.data),
+
+  /**
+   * Get image processing status
+   * @param imageId - Image ID
+   */
+  getProcessingStatus: (imageId: string) =>
+    apiClient.get<{ data: import("./types").ImageProcessingStatusResponse }>(
+      `/v1/images/${imageId}/status`
+    ).then(res => res.data),
+
+  /**
+   * Get download URL for processed image
+   * @param imageId - Image ID
+   */
+  getDownloadUrl: (imageId: string) =>
+    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/v1/images/${imageId}/download`,
+};

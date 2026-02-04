@@ -11,7 +11,7 @@
  * const navItems = getNavRoutes();
  */
 
-import { LucideIcon, ShieldCheck, Lightbulb, Home } from "lucide-react";
+import { LucideIcon, ShieldCheck, Lightbulb, Home, ImageSquare } from "lucide-react";
 
 /**
  * 路由配置项类型定义
@@ -70,6 +70,15 @@ export const routes: RouteConfig[] = [
     showInNav: true,
     order: 20,
     description: 'AI 灵感解析工作台（含翻译功能）',
+  },
+  {
+    id: 'compress',
+    label: 'Image Compress',
+    href: '/compress',
+    icon: ImageSquare,
+    showInNav: true,
+    order: 30,
+    description: '在线图片压缩与调整工具',
   },
 ];
 
